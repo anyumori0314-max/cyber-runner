@@ -10,10 +10,15 @@
     <div class="container">
         <!-- タイトル画面 -->
         <div id="titleScreen" class="screen active">
+            <canvas id="titleCanvas" width="800" height="600" class="title-canvas"></canvas>
             <div class="title-content">
-                <h1 class="game-title">避けろ！<br>サイバー<br>ランナー</h1>
-                <p class="subtitle">上から落ちてくる障害物を避け続けよう！</p>
-                <button id="startBtn" class="btn btn-primary">START</button>
+                <h1 class="game-title">避けろ！<span class="accent">サイバーランナー</span></h1>
+                <p class="subtitle">未来都市を駆け抜け、障害物を避け続けろ</p>
+                <p class="controls">操作: ← / → または A / D</p>
+                <div class="title-buttons">
+                    <button id="startBtn" class="btn btn-primary">START</button>
+                    <button id="muteBtn" class="btn btn-secondary">SOUND</button>
+                </div>
                 <div class="high-score-display">
                     <p>ハイスコア: <span id="highScoreTitle">0</span></p>
                 </div>

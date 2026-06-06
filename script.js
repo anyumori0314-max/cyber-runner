@@ -11,6 +11,8 @@ const INITIAL_SPEED = 3;
 const MAX_SPEED = 12;
 const INITIAL_SPAWN_RATE = 0.02; // 障害物出現確率
 const MAX_SPAWN_RATE = 0.08;
+const INITIAL_POWERUP_SPAWN = 0.002;
+const MAX_POWERUP_SPAWN = 0.01;
 
 // ===================================
 // ゲーム状態管理
@@ -24,8 +26,14 @@ const gameState = {
     level: 1,
     gameTime: 0,
     startTime: 0,
+    // baseSpeed は難易度計算に用いる基礎速度
+    baseSpeed: INITIAL_SPEED,
+    // 実際の速度（baseSpeed に slowFactor を乗算したもの）
     speed: INITIAL_SPEED,
-    spawnRate: INITIAL_SPAWN_RATE
+    spawnRate: INITIAL_SPAWN_RATE,
+    powerupSpawnRate: INITIAL_POWERUP_SPAWN,
+    slowFactor: 1,
+    specialChance: 0 // 特殊障害物出現率（時間経過で増加）
 };
 
 // RAF IDを保持してループを安定化
@@ -82,44 +90,94 @@ const player = {
 // ===================================
 class Obstacle {
     constructor() {
-        this.x = Math.random() * (CANVAS_WIDTH - OBSTACLE_WIDTH);
-        this.y = -OBSTACLE_HEIGHT;
-        this.width = OBSTACLE_WIDTH;
-        this.height = OBSTACLE_HEIGHT;
+        // 障害物の種類を決定（時間経過で特殊種が増える）
+        const r = Math.random();
+        const special = Math.random() < gameState.specialChance;
+        this.type = 'normal';
+        if (special) {
+            // 高速・大型・ジグザグのいずれか
+            const t = Math.random();
+            if (t < 0.33) this.type = 'fast';
+            else if (t < 0.66) this.type = 'large';
+            else this.type = 'zigzag';
+        }
+
+        // サイズと初期位置
+        if (this.type === 'fast') {
+            this.width = 20;
+            this.height = 40;
+            this.color = '#ff7744';
+        } else if (this.type === 'large') {
+            this.width = 80;
+            this.height = 60;
+            this.color = '#8855ff';
+        } else if (this.type === 'zigzag') {
+            this.width = 46;
+            this.height = 46;
+            this.color = '#ffd400';
+            this.zigAmplitude = 60;
+            this.zigFreq = 0.02 + Math.random() * 0.03;
+            this.initialX = Math.random() * (CANVAS_WIDTH - this.width);
+            this.x = this.initialX;
+        } else {
+            this.width = OBSTACLE_WIDTH;
+            this.height = OBSTACLE_HEIGHT;
+            this.color = '#ff0088';
+        }
+
+        if (this.type !== 'zigzag') {
+            this.x = Math.random() * (CANVAS_WIDTH - this.width);
+        }
+        this.y = -this.height;
+        this.baseSpeed = gameState.baseSpeed;
         this.speed = gameState.speed;
     }
 
     // 障害物を更新
     update() {
-        // 難易度変化に応じて既存の障害物も速度を追従させる
-        this.speed = gameState.speed;
+        // 難易度に追従
+        this.baseSpeed = gameState.baseSpeed;
+        // 特殊種は倍率を使う
+        if (this.type === 'fast') this.speed = gameState.speed * 1.6;
+        else if (this.type === 'large') this.speed = gameState.speed * 0.75;
+        else this.speed = gameState.speed;
+
+        // ジグザグは横移動も
+        if (this.type === 'zigzag') {
+            const t = this.y; // use y as phase
+            this.x = this.initialX + Math.sin(t * this.zigFreq) * this.zigAmplitude;
+        }
         this.y += this.speed;
     }
 
     // 障害物を描画
     draw(ctx) {
         // 障害物の本体
-        ctx.fillStyle = '#ff0088';
-        ctx.shadowColor = '#ff0088';
-        ctx.shadowBlur = 15;
+        ctx.fillStyle = this.color || '#ff0088';
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 14;
         ctx.fillRect(this.x, this.y, this.width, this.height);
 
-        // 障害物の枠
-        ctx.strokeStyle = '#ff00ff';
-        ctx.lineWidth = 2;
-        ctx.shadowColor = '#ff00ff';
-        ctx.shadowBlur = 10;
+        // 枠
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.shadowBlur = 8;
         ctx.strokeRect(this.x, this.y, this.width, this.height);
 
-        // 危険マーク
-        ctx.strokeStyle = '#ffff00';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(this.x + 10, this.y + 10);
-        ctx.lineTo(this.x + 40, this.y + 40);
-        ctx.moveTo(this.x + 40, this.y + 10);
-        ctx.lineTo(this.x + 10, this.y + 40);
-        ctx.stroke();
+        // 種類ごとの装飾
+        if (this.type === 'fast') {
+            ctx.fillStyle = '#222';
+            ctx.fillRect(this.x + 2, this.y + 6, this.width - 4, 6);
+        } else if (this.type === 'large') {
+            ctx.fillStyle = 'rgba(255,255,255,0.06)';
+            ctx.fillRect(this.x + 4, this.y + 4, this.width - 8, this.height - 8);
+        } else if (this.type === 'zigzag') {
+            ctx.strokeStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.moveTo(this.x + 4, this.y + this.height / 2);
+            ctx.lineTo(this.x + this.width - 4, this.y + this.height / 2);
+            ctx.stroke();
+        }
     }
 
     // 画面外に出たか判定
@@ -142,6 +200,9 @@ class Obstacle {
 // ゲームオブジェクト配列
 // ===================================
 let obstacles = [];
+let powerUps = [];
+let popups = []; // テキストのフローティング表示
+let lastLevel = 0;
 
 // ===================================
 // DOM要素の取得
@@ -158,6 +219,135 @@ const finalScoreDisplay = document.getElementById('finalScore');
 const highScoreTitleDisplay = document.getElementById('highScoreTitle');
 const finalHighScoreDisplay = document.getElementById('finalHighScore');
 const currentLevelDisplay = document.getElementById('currentLevel');
+const powerupStatusDisplay = document.createElement('div');
+powerupStatusDisplay.className = 'powerup-display';
+powerupStatusDisplay.id = 'powerupStatus';
+// ゲームヘッダーに差し込む
+const gameHeader = document.querySelector('.game-header');
+if (gameHeader) gameHeader.appendChild(powerupStatusDisplay);
+const titleCanvas = document.getElementById('titleCanvas');
+const muteBtn = document.getElementById('muteBtn');
+
+// ===================================
+// AudioManager: Web Audio で簡易的な効果音を生成
+// ===================================
+const AudioManager = {
+    ctx: null,
+    master: null,
+    muted: false,
+    init() {
+        try {
+            if (this.ctx) return;
+            const C = window.AudioContext || window.webkitAudioContext;
+            if (!C) return;
+            this.ctx = new C();
+            this.master = this.ctx.createGain();
+            this.master.gain.value = 0.2; // 全体音量
+            this.master.connect(this.ctx.destination);
+        } catch (e) {
+            console.warn('Audio not available', e);
+            this.ctx = null;
+        }
+    },
+    toggleMute() {
+        this.muted = !this.muted;
+        if (this.master) this.master.gain.value = this.muted ? 0 : 0.18;
+    },
+    play(name) {
+        if (!this.ctx) return;
+        try {
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+            const t = this.ctx.currentTime;
+            const o = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            o.connect(g);
+            g.connect(this.master);
+            // 簡易な音色定義
+            if (name === 'start') {
+                o.type = 'sine';
+                o.frequency.setValueAtTime(880, t);
+                g.gain.setValueAtTime(0.0001, t);
+                g.gain.exponentialRampToValueAtTime(0.08, t + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+                o.start(t);
+                o.stop(t + 0.3);
+            } else if (name === 'levelUp') {
+                o.type = 'triangle';
+                o.frequency.setValueAtTime(660, t);
+                g.gain.setValueAtTime(0.0001, t);
+                g.gain.exponentialRampToValueAtTime(0.06, t + 0.01);
+                g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+                o.start(t);
+                o.stop(t + 0.22);
+            } else if (name === 'pickup') {
+                o.type = 'sawtooth';
+                o.frequency.setValueAtTime(1200, t);
+                g.gain.setValueAtTime(0.0001, t);
+                g.gain.exponentialRampToValueAtTime(0.08, t + 0.005);
+                g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+                o.start(t);
+                o.stop(t + 0.16);
+            } else if (name === 'gameover') {
+                o.type = 'sine';
+                o.frequency.setValueAtTime(200, t);
+                g.gain.setValueAtTime(0.0001, t);
+                g.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+                o.start(t);
+                o.stop(t + 0.7);
+            }
+        } catch (e) {
+            console.warn('Audio play failed', e);
+        }
+    }
+};
+
+// ===================================
+// PowerUp クラス
+// ===================================
+class PowerUp {
+    constructor() {
+        this.types = ['shield', 'slow', 'bonus'];
+        this.type = this.types[Math.floor(Math.random() * this.types.length)];
+        this.x = Math.random() * (CANVAS_WIDTH - 30);
+        this.y = -30;
+        this.width = 30;
+        this.height = 30;
+        this.speed = gameState.speed * 0.6;
+        this.color = this.type === 'shield' ? '#00eaff' : this.type === 'slow' ? '#ffaa00' : '#ffe066';
+    }
+    update() {
+        this.y += this.speed;
+    }
+    draw(ctx) {
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 12;
+        // 簡易アイコン: 円
+        ctx.beginPath();
+        ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // テキスト
+        ctx.fillStyle = '#000';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(this.type === 'shield' ? 'S' : this.type === 'slow' ? 'T' : '+', this.x + this.width / 2, this.y + this.height / 2 + 4);
+    }
+    isOutOfBounds() {
+        return this.y > CANVAS_HEIGHT;
+    }
+    collidesWith(player) {
+        return (
+            this.x < player.x + player.width &&
+            this.x + this.width > player.x &&
+            this.y < player.y + player.height &&
+            this.y + this.height > player.y
+        );
+    }
+}
 
 // ===================================
 // イベントリスナー
@@ -188,6 +378,12 @@ startBtn.addEventListener('click', startGame);
 // RETRYボタン
 retryBtn.addEventListener('click', startGame);
 
+// ミュート切替
+muteBtn && muteBtn.addEventListener('click', () => {
+    AudioManager.toggleMute();
+    muteBtn.textContent = AudioManager.muted ? 'SOUND: OFF' : 'SOUND: ON';
+});
+
 // ウィンドウのフォーカスを失ったときはキー状態をリセットして入力ループ停止を防ぐ
 window.addEventListener('blur', () => {
     player.moveLeft = false;
@@ -216,8 +412,14 @@ function startGame() {
         rafId = null;
     }
 
+    // ユーザー操作後にAudioContextを初期化
+    AudioManager.init();
+
     // すべての状態を初期化
     resetAllState();
+
+    // 効果音（スタート）
+    AudioManager.play('start');
 
     // 画面遷移
     titleScreen.classList.remove('active');
@@ -258,6 +460,9 @@ function endGame() {
         }
     }
 
+    // 効果音（ゲームオーバー）
+    AudioManager.play('gameover');
+
     // ゲームオーバー画面に表示
     finalScoreDisplay.textContent = Math.floor(gameState.score);
     finalHighScoreDisplay.textContent = gameState.highScore;
@@ -287,12 +492,33 @@ function loop(timestamp) {
         // 難易度を上げる
         updateDifficulty();
 
+        // パワーアップ／シールドの期限チェック
+        if (gameState.slowUntil && Date.now() > gameState.slowUntil) {
+            gameState.slowFactor = 1;
+            gameState.slowUntil = null;
+        }
+        if (player.shield && player.shieldUntil && Date.now() > player.shieldUntil) {
+            player.shield = false;
+            player.shieldUntil = null;
+        }
+
+        // レベルアップ効果音
+        if (gameState.level > lastLevel) {
+            AudioManager.play('levelUp');
+            lastLevel = gameState.level;
+        }
+
         // プレイヤーを更新
         player.update();
 
         // 新しい障害物を生成
         if (Math.random() < gameState.spawnRate) {
             obstacles.push(new Obstacle());
+        }
+
+        // 新しいパワーアップを低確率で生成
+        if (Math.random() < gameState.powerupSpawnRate) {
+            powerUps.push(new PowerUp());
         }
 
         // 障害物を更新と衝突判定（後方ループで安全にsplice）
@@ -308,8 +534,33 @@ function loop(timestamp) {
 
             // プレイヤーとの衝突判定
             if (ob.collidesWith(player)) {
+                if (player.shield) {
+                    // シールドに守られる
+                    player.shield = false;
+                    // 障害物を消す
+                    obstacles.splice(i, 1);
+                    popups.push({ x: player.x, y: player.y - 20, text: 'Shield!', ttl: 60 });
+                    AudioManager.play('pickup');
+                    continue;
+                }
                 endGame();
+                AudioManager.play('gameover');
                 return;
+            }
+        }
+
+        // パワーアップ更新と衝突判定
+        for (let i = powerUps.length - 1; i >= 0; i--) {
+            const pu = powerUps[i];
+            pu.update();
+            if (pu.isOutOfBounds()) {
+                powerUps.splice(i, 1);
+                continue;
+            }
+            if (pu.collidesWith(player)) {
+                applyPowerUp(pu.type);
+                powerUps.splice(i, 1);
+                AudioManager.play('pickup');
             }
         }
 
@@ -331,13 +582,37 @@ function loop(timestamp) {
 // 難易度の更新
 // ===================================
 function updateDifficulty() {
-    // 時間に応じて速度を上げる（最大速度までプログレッシブに）
-    const speedIncrease = (gameState.gameTime / 60) * (MAX_SPEED - INITIAL_SPEED);
-    gameState.speed = INITIAL_SPEED + Math.min(speedIncrease, MAX_SPEED - INITIAL_SPEED);
+    // baseSpeed を計算し、slowFactor を掛けて実効速度を決定
+    const baseIncrease = (gameState.gameTime / 60) * (MAX_SPEED - INITIAL_SPEED);
+    gameState.baseSpeed = INITIAL_SPEED + Math.min(baseIncrease, MAX_SPEED - INITIAL_SPEED);
+    gameState.speed = gameState.baseSpeed * (gameState.slowFactor || 1);
 
-    // 時間に応じて出現率を上げる
+    // 障害物出現率を増やす
     const spawnIncrease = (gameState.gameTime / 60) * (MAX_SPAWN_RATE - INITIAL_SPAWN_RATE);
     gameState.spawnRate = INITIAL_SPAWN_RATE + Math.min(spawnIncrease, MAX_SPAWN_RATE - INITIAL_SPAWN_RATE);
+
+    // パワーアップ出現率は低めに増加
+    const puIncrease = (gameState.gameTime / 120) * (MAX_POWERUP_SPAWN - INITIAL_POWERUP_SPAWN);
+    gameState.powerupSpawnRate = INITIAL_POWERUP_SPAWN + Math.min(puIncrease, MAX_POWERUP_SPAWN - INITIAL_POWERUP_SPAWN);
+
+    // 特殊障害物の出現確率を増やす
+    gameState.specialChance = Math.min(0.05 + gameState.gameTime / 1200, 0.4);
+}
+
+// パワーアップ効果適用
+function applyPowerUp(type) {
+    if (type === 'shield') {
+        player.shield = true;
+        player.shieldUntil = Date.now() + 8000; // 8秒
+        popups.push({ x: player.x, y: player.y - 20, text: 'Shield Acquired', ttl: 90 });
+    } else if (type === 'slow') {
+        gameState.slowFactor = 0.5;
+        gameState.slowUntil = Date.now() + 6000; // 6秒
+        popups.push({ x: player.x, y: player.y - 20, text: 'Slow Down', ttl: 90 });
+    } else if (type === 'bonus') {
+        gameState.score += 50;
+        popups.push({ x: player.x, y: player.y - 20, text: '+50', ttl: 90 });
+    }
 }
 
 // ===================================
@@ -359,14 +634,45 @@ function draw() {
 
     // グリッドパターンを描画（サイバー風）
     drawGrid();
+    // パワーアップを描画
+    for (let pu of powerUps) {
+        pu.draw(ctx);
+    }
 
     // 障害物を描画
     for (let obstacle of obstacles) {
         obstacle.draw(ctx);
     }
 
-    // プレイヤーを描画
+    // プレイヤーを描画（シールド時の見た目変化を含む）
+    if (player.shield) {
+        ctx.save();
+        ctx.shadowColor = '#00eaff';
+        ctx.shadowBlur = 24;
+        ctx.strokeStyle = '#00eaff';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(player.x - 4, player.y - 4, player.width + 8, player.height + 8);
+        ctx.restore();
+    }
     player.draw(ctx);
+
+    // ポップアップ（取得メッセージなど）を描画
+    for (let i = popups.length - 1; i >= 0; i--) {
+        const p = popups[i];
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '14px Arial';
+        ctx.fillText(p.text, p.x + 20, p.y);
+        p.y -= 0.6;
+        p.ttl -= 1;
+        if (p.ttl <= 0) popups.splice(i, 1);
+    }
+
+    // パワーアップ状態をUIに表示
+    const active = [];
+    if (player.shield) active.push('Shield');
+    if (gameState.slowFactor < 1) active.push('Slow');
+    if (active.length === 0) powerupStatusDisplay.textContent = '';
+    else powerupStatusDisplay.textContent = 'Power: ' + active.join(', ');
 }
 
 // ===================================
@@ -416,6 +722,48 @@ function init() {
 // ページ読み込み時に初期化
 init();
 
+// タイトル画面用アニメーション
+let titleAnimId = null;
+function animateTitleCanvas() {
+    if (!titleCanvas) return;
+    const tctx = titleCanvas.getContext('2d');
+    const w = titleCanvas.width;
+    const h = titleCanvas.height;
+    let offset = 0;
+    function frame() {
+        tctx.clearRect(0, 0, w, h);
+        // 背景グラデ
+        const g = tctx.createLinearGradient(0, 0, w, h);
+        g.addColorStop(0, 'rgba(10,10,30,0.6)');
+        g.addColorStop(1, 'rgba(20,0,30,0.4)');
+        tctx.fillStyle = g;
+        tctx.fillRect(0, 0, w, h);
+
+        // 動くライン
+        tctx.strokeStyle = 'rgba(0,200,255,0.08)';
+        tctx.lineWidth = 2;
+        for (let i = -2; i < 20; i++) {
+            tctx.beginPath();
+            const x = ((i * 80 + offset) % (w + 200)) - 100;
+            tctx.moveTo(x, 0);
+            tctx.lineTo(x + 120, h);
+            tctx.stroke();
+        }
+        offset += 1.2;
+        if (titleScreen.classList.contains('active')) titleAnimId = requestAnimationFrame(frame);
+        else {
+            tctx.clearRect(0, 0, w, h);
+            if (titleAnimId) cancelAnimationFrame(titleAnimId);
+            titleAnimId = null;
+        }
+    }
+    if (!titleAnimId) frame();
+}
+
+// 初期表示時の準備
+if (titleCanvas) animateTitleCanvas();
+if (muteBtn) muteBtn.textContent = AudioManager.muted ? 'SOUND: OFF' : 'SOUND: ON';
+
 // すべてのゲーム状態を初期化する（restart/retry 用）
 function resetAllState() {
     gameState.isRunning = true;
@@ -424,15 +772,28 @@ function resetAllState() {
     gameState.level = 1;
     gameState.gameTime = 0;
     gameState.startTime = Date.now();
+    gameState.baseSpeed = INITIAL_SPEED;
     gameState.speed = INITIAL_SPEED;
     gameState.spawnRate = INITIAL_SPAWN_RATE;
+    gameState.powerupSpawnRate = INITIAL_POWERUP_SPAWN;
+    gameState.slowFactor = 1;
+    gameState.slowUntil = null;
+    gameState.specialChance = 0;
 
     // 障害物やプレイヤーの状態をリセット
     obstacles = [];
+    powerUps = [];
+    popups = [];
     player.x = CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2;
     player.y = CANVAS_HEIGHT - PLAYER_HEIGHT - 20;
     player.moveLeft = false;
     player.moveRight = false;
+
+    // プレイヤーのパワーアップ状態をリセット
+    player.shield = false;
+    player.shieldUntil = null;
+
+    lastLevel = 0;
 
     // 既存のエラーはクリア
     lastError = null;

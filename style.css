@@ -47,7 +47,7 @@ body {
 }
 
 .game-title {
-    font-size: 4rem;
+    font-size: 4.2rem;
     font-weight: bold;
     margin-bottom: 30px;
     text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff88, 0 0 60px #0088ff;
@@ -55,6 +55,13 @@ body {
     letter-spacing: 3px;
     line-height: 1.2;
     animation: glow-pulse 2s ease-in-out infinite;
+}
+
+.game-title .accent {
+    display: block;
+    font-size: 1.1em;
+    color: #00e0ff;
+    text-shadow: 0 0 30px #00e0ff;
 }
 
 @keyframes glow-pulse {
@@ -71,6 +78,43 @@ body {
     margin-bottom: 40px;
     color: #00ffff;
     text-shadow: 0 0 10px #00ffff;
+}
+
+.controls {
+    font-size: 1rem;
+    color: #bfefff;
+    margin-bottom: 12px;
+}
+
+.title-buttons {
+    display:flex;
+    gap:12px;
+    justify-content:center;
+    align-items:center;
+}
+
+.btn-secondary {
+    padding: 12px 18px;
+    border-radius: 6px;
+    background: linear-gradient(90deg,#222,#444);
+    color:#fff;
+    border:1px solid rgba(255,255,255,0.08);
+}
+
+.title-canvas {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    opacity: 0.9;
+}
+
+.title-content{
+    position: relative;
+    z-index: 2;
 }
 
 .high-score-display {
@@ -138,6 +182,13 @@ body {
     box-shadow: 0 0 20px #00ff88, inset 0 0 30px rgba(0, 255, 136, 0.1);
     display: block;
     margin: 0 auto;
+}
+
+/* パワーアップ表示 */
+.powerup-display {
+    color: #ffea00;
+    text-shadow: 0 0 8px #ffea00;
+    font-weight: bold;
 }
 
 /* ゲームオーバー画面 */
