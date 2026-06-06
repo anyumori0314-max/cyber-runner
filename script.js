@@ -14,6 +14,17 @@ const MAX_SPAWN_RATE = 0.08;
 const INITIAL_POWERUP_SPAWN = 0.002;
 const MAX_POWERUP_SPAWN = 0.01;
 
+// ====== Delta / speed 調整用定数 ======
+// 単位速度 (gameState.speed の 1.0) をピクセル/秒に変換する係数
+// 調整しやすくするための定数。既存実装と同等の挙動にするためデフォルトは 60。
+const SPEED_UNIT_TO_PX_PER_SEC = 60;
+// プレイヤーの移動速度（px/秒）。既存値 360 を定数化。
+const PLAYER_SPEED_PX_PER_SEC = 360;
+// 1フレームあたりの最大 delta 秒（大きなジャンプを抑制して安定化）
+const MAX_DELTA_TIME = 0.1;
+// 初期障害物速度（論理単位を使う場合の参考値）
+const INITIAL_OBSTACLE_SPEED = INITIAL_SPEED;
+
 // ===================================
 // ゲーム状態管理
 // ===================================
@@ -40,6 +51,8 @@ const gameState = {
 let rafId = null;
 // 最後に発生したエラー情報
 let lastError = null;
+// 前フレームの timestamp（ms）
+let lastTimestamp = null;
 
 // ===================================
 // プレイヤーオブジェクト
@@ -49,17 +62,20 @@ const player = {
     y: CANVAS_HEIGHT - PLAYER_HEIGHT - 20,
     width: PLAYER_WIDTH,
     height: PLAYER_HEIGHT,
-    speed: 6,
+    // speed: px per second (converted from previous frame-based value)
+    speed: PLAYER_SPEED_PX_PER_SEC,
     moveLeft: false,
     moveRight: false,
 
-    // プレイヤーを更新
-    update() {
+    // プレイヤーを更新 (delta: seconds)
+    update(delta) {
+        if (!delta) return;
+        const move = this.speed * delta; // px to move this frame
         if (this.moveLeft && this.x > 0) {
-            this.x -= this.speed;
+            this.x = Math.max(0, this.x - move);
         }
         if (this.moveRight && this.x + this.width < CANVAS_WIDTH) {
-            this.x += this.speed;
+            this.x = Math.min(CANVAS_WIDTH - this.width, this.x + move);
         }
     },
 
@@ -129,25 +145,29 @@ class Obstacle {
             this.x = Math.random() * (CANVAS_WIDTH - this.width);
         }
         this.y = -this.height;
+        // gameState.speed は論理単位なので、ピクセル/秒に変換して使う
         this.baseSpeed = gameState.baseSpeed;
-        this.speed = gameState.speed;
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC; // convert to px/sec
+        this.elapsed = 0; // for zigzag timing
     }
 
     // 障害物を更新
-    update() {
+    update(delta) {
+        if (!delta) return;
         // 難易度に追従
         this.baseSpeed = gameState.baseSpeed;
         // 特殊種は倍率を使う
-        if (this.type === 'fast') this.speed = gameState.speed * 1.6;
-        else if (this.type === 'large') this.speed = gameState.speed * 0.75;
-        else this.speed = gameState.speed;
+        const basePx = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC;
+        if (this.type === 'fast') this.speed = basePx * 1.6;
+        else if (this.type === 'large') this.speed = basePx * 0.75;
+        else this.speed = basePx;
 
-        // ジグザグは横移動も
+        // ジグザグは横移動も（time-based）
         if (this.type === 'zigzag') {
-            const t = this.y; // use y as phase
-            this.x = this.initialX + Math.sin(t * this.zigFreq) * this.zigAmplitude;
+            this.elapsed += delta;
+            this.x = this.initialX + Math.sin(this.elapsed / this.zigFreq) * this.zigAmplitude;
         }
-        this.y += this.speed;
+        this.y += this.speed * delta;
     }
 
     // 障害物を描画
@@ -236,17 +256,14 @@ const AudioManager = {
     master: null,
     muted: false,
     init() {
+        if (this.ctx) return;
         try {
-            if (this.ctx) return;
-            const C = window.AudioContext || window.webkitAudioContext;
-            if (!C) return;
-            this.ctx = new C();
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
             this.master = this.ctx.createGain();
-            this.master.gain.value = 0.2; // 全体音量
+            this.master.gain.value = this.muted ? 0 : 0.18;
             this.master.connect(this.ctx.destination);
         } catch (e) {
-            console.warn('Audio not available', e);
-            this.ctx = null;
+            console.warn('Audio init failed', e);
         }
     },
     toggleMute() {
@@ -316,8 +333,8 @@ class PowerUp {
         this.speed = gameState.speed * 0.6;
         this.color = this.type === 'shield' ? '#00eaff' : this.type === 'slow' ? '#ffaa00' : '#ffe066';
     }
-    update() {
-        this.y += this.speed;
+    update(delta) {
+        this.y += (this.speed * (delta || 0));
     }
     draw(ctx) {
         ctx.fillStyle = this.color;
@@ -426,9 +443,14 @@ function startGame() {
     gameOverScreen.classList.remove('active');
     gameScreen.classList.add('active');
 
-    // キャンバスのサイズを明示的に設定（レスポンシブ時のズレを防ぐ）
-    canvas.width = CANVAS_WIDTH;
-    canvas.height = CANVAS_HEIGHT;
+    // キャンバスのサイズを明示的に設定（HiDPI 対応）
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = CANVAS_WIDTH + 'px';
+    canvas.style.height = CANVAS_HEIGHT + 'px';
+    canvas.width = CANVAS_WIDTH * dpr;
+    canvas.height = CANVAS_HEIGHT * dpr;
+    // 描画は論理ピクセル単位で行えるようにコンテキストをスケーリング
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // ゲームループ開始（安定したループ）
     rafId = requestAnimationFrame(loop);
@@ -480,8 +502,17 @@ function loop(timestamp) {
     try {
         if (!gameState.isRunning) return;
 
-        // ゲーム時間を更新
-        gameState.gameTime = (Date.now() - gameState.startTime) / 1000;
+        // deltaTime を計算（seconds）
+        let delta = 0;
+        if (lastTimestamp != null) {
+            delta = (timestamp - lastTimestamp) / 1000;
+            // 上限を設定して急激なジャンプを抑制
+            if (delta > MAX_DELTA_TIME) delta = MAX_DELTA_TIME;
+        }
+        lastTimestamp = timestamp;
+
+        // ゲーム時間を累積（秒）
+        gameState.gameTime += delta;
 
         // スコアを更新（生存時間 * 10）
         gameState.score = gameState.gameTime * 10;
@@ -508,23 +539,23 @@ function loop(timestamp) {
             lastLevel = gameState.level;
         }
 
-        // プレイヤーを更新
-        player.update();
+        // プレイヤーを更新 (delta seconds)
+        player.update(delta);
 
         // 新しい障害物を生成
-        if (Math.random() < gameState.spawnRate) {
+        if (Math.random() < gameState.spawnRate * (delta || 0)) {
             obstacles.push(new Obstacle());
         }
 
         // 新しいパワーアップを低確率で生成
-        if (Math.random() < gameState.powerupSpawnRate) {
+        if (Math.random() < gameState.powerupSpawnRate * (delta || 0)) {
             powerUps.push(new PowerUp());
         }
 
         // 障害物を更新と衝突判定（後方ループで安全にsplice）
         for (let i = obstacles.length - 1; i >= 0; i--) {
             const ob = obstacles[i];
-            ob.update();
+            ob.update(delta);
 
             // 画面外に出た障害物を削除
             if (ob.isOutOfBounds()) {
@@ -539,7 +570,7 @@ function loop(timestamp) {
                     player.shield = false;
                     // 障害物を消す
                     obstacles.splice(i, 1);
-                    popups.push({ x: player.x, y: player.y - 20, text: 'Shield!', ttl: 60 });
+                    popups.push({ x: player.x, y: player.y - 20, text: 'Shield!', ttl: 1.2 });
                     AudioManager.play('pickup');
                     continue;
                 }
@@ -552,7 +583,7 @@ function loop(timestamp) {
         // パワーアップ更新と衝突判定
         for (let i = powerUps.length - 1; i >= 0; i--) {
             const pu = powerUps[i];
-            pu.update();
+            pu.update(delta);
             if (pu.isOutOfBounds()) {
                 powerUps.splice(i, 1);
                 continue;
@@ -564,10 +595,16 @@ function loop(timestamp) {
             }
         }
 
-        // 画面を描画
-        draw();
+        // ポップアップ更新（ttl は秒）
+        for (let i = popups.length - 1; i >= 0; i--) {
+            const p = popups[i];
+            p.y -= 20 * (delta || 0);
+            p.ttl -= (delta || 0);
+            if (p.ttl <= 0) popups.splice(i, 1);
+        }
 
-        // UIを更新
+        // 画面を描画とUI更新（1回だけ）
+        draw();
         updateUI();
 
         // 次フレームをリクエスト
@@ -604,14 +641,14 @@ function applyPowerUp(type) {
     if (type === 'shield') {
         player.shield = true;
         player.shieldUntil = Date.now() + 8000; // 8秒
-        popups.push({ x: player.x, y: player.y - 20, text: 'Shield Acquired', ttl: 90 });
+        popups.push({ x: player.x, y: player.y - 20, text: 'Shield Acquired', ttl: 1.8 });
     } else if (type === 'slow') {
         gameState.slowFactor = 0.5;
         gameState.slowUntil = Date.now() + 6000; // 6秒
-        popups.push({ x: player.x, y: player.y - 20, text: 'Slow Down', ttl: 90 });
+        popups.push({ x: player.x, y: player.y - 20, text: 'Slow Down', ttl: 1.8 });
     } else if (type === 'bonus') {
         gameState.score += 50;
-        popups.push({ x: player.x, y: player.y - 20, text: '+50', ttl: 90 });
+        popups.push({ x: player.x, y: player.y - 20, text: '+50', ttl: 1.8 });
     }
 }
 
@@ -662,9 +699,7 @@ function draw() {
         ctx.fillStyle = '#ffffff';
         ctx.font = '14px Arial';
         ctx.fillText(p.text, p.x + 20, p.y);
-        p.y -= 0.6;
-        p.ttl -= 1;
-        if (p.ttl <= 0) popups.splice(i, 1);
+        // TTL と位置の更新はメインループで行う（deltaTime ベース）
     }
 
     // パワーアップ状態をUIに表示
@@ -798,6 +833,8 @@ function resetAllState() {
     // 既存のエラーはクリア
     lastError = null;
     removeErrorOverlay();
+    // lastTimestamp をリセットして delta 計算を初期化
+    lastTimestamp = null;
 }
 
 // エラーを画面表示するオーバーレイを生成
