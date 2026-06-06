@@ -1,0 +1,218 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', 'Helvetica', sans-serif;
+    background: linear-gradient(135deg, #0a0e27 0%, #1a1a3e 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+}
+
+.container {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    max-width: 900px;
+}
+
+/* スクリーン共通 */
+.screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+
+.screen.active {
+    display: flex;
+}
+
+/* タイトル画面 */
+#titleScreen {
+    background: linear-gradient(135deg, #0a0e27 0%, #1a1a3e 50%, #2a0845 100%);
+}
+
+.title-content {
+    text-align: center;
+}
+
+.game-title {
+    font-size: 4rem;
+    font-weight: bold;
+    margin-bottom: 30px;
+    text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff88, 0 0 60px #0088ff;
+    color: #00ff88;
+    letter-spacing: 3px;
+    line-height: 1.2;
+    animation: glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+    0%, 100% {
+        text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff88;
+    }
+    50% {
+        text-shadow: 0 0 30px #00ff88, 0 0 60px #00ff88, 0 0 80px #0088ff;
+    }
+}
+
+.subtitle {
+    font-size: 1.2rem;
+    margin-bottom: 40px;
+    color: #00ffff;
+    text-shadow: 0 0 10px #00ffff;
+}
+
+.high-score-display {
+    margin-top: 50px;
+    font-size: 1.3rem;
+    color: #ffff00;
+    text-shadow: 0 0 10px #ffff00;
+}
+
+/* ボタン */
+.btn {
+    padding: 15px 60px;
+    font-size: 1.3rem;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    margin: 20px 0;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #00ff88 0%, #00ffff 100%);
+    color: #000;
+    box-shadow: 0 0 20px #00ff88, 0 0 30px #00ffff;
+    border: 2px solid #00ff88;
+}
+
+.btn-primary:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 30px #00ff88, 0 0 50px #00ffff, 0 0 70px #0088ff;
+}
+
+.btn-primary:active {
+    transform: scale(0.95);
+}
+
+/* ゲーム画面 */
+#gameScreen {
+    background: #000;
+    flex-direction: column;
+    padding: 20px;
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    width: 800px;
+    margin-bottom: 20px;
+    font-size: 1.3rem;
+}
+
+.score-display,
+.level-display {
+    text-shadow: 0 0 10px #00ffff;
+    color: #00ffff;
+    font-weight: bold;
+}
+
+#gameCanvas {
+    border: 3px solid #00ff88;
+    background: linear-gradient(135deg, #0a0e27 0%, #1a1a3e 100%);
+    box-shadow: 0 0 20px #00ff88, inset 0 0 30px rgba(0, 255, 136, 0.1);
+    display: block;
+    margin: 0 auto;
+}
+
+/* ゲームオーバー画面 */
+#gameOverScreen {
+    background: linear-gradient(135deg, #1a0000 0%, #2a0a0a 50%, #0a0a1a 100%);
+}
+
+.game-over-content {
+    text-align: center;
+}
+
+.game-over-title {
+    font-size: 3.5rem;
+    margin-bottom: 40px;
+    color: #ff0088;
+    text-shadow: 0 0 20px #ff0088, 0 0 40px #ff0088;
+    letter-spacing: 3px;
+    animation: blink 0.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+    0%, 100% {
+        opacity: 1;
+        text-shadow: 0 0 20px #ff0088, 0 0 40px #ff0088;
+    }
+    50% {
+        opacity: 0.7;
+        text-shadow: 0 0 10px #ff0088;
+    }
+}
+
+.score-result,
+.high-score-result {
+    margin: 25px 0;
+}
+
+.score-label {
+    font-size: 1.1rem;
+    color: #00ffff;
+    text-shadow: 0 0 10px #00ffff;
+    margin-bottom: 5px;
+}
+
+.score-value {
+    font-size: 2.5rem;
+    color: #ffff00;
+    text-shadow: 0 0 10px #ffff00, 0 0 20px #ff8800;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 900px) {
+    .game-title {
+        font-size: 3rem;
+    }
+
+    .subtitle {
+        font-size: 1rem;
+    }
+
+    .game-over-title {
+        font-size: 2.5rem;
+    }
+
+    .score-value {
+        font-size: 2rem;
+    }
+
+    #gameCanvas {
+        width: 90vw;
+        height: auto;
+    }
+
+    .game-header {
+        width: 90vw;
+    }
+}

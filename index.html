@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>避けろ！サイバーランナー</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- タイトル画面 -->
+        <div id="titleScreen" class="screen active">
+            <div class="title-content">
+                <h1 class="game-title">避けろ！<br>サイバー<br>ランナー</h1>
+                <p class="subtitle">上から落ちてくる障害物を避け続けよう！</p>
+                <button id="startBtn" class="btn btn-primary">START</button>
+                <div class="high-score-display">
+                    <p>ハイスコア: <span id="highScoreTitle">0</span></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ゲーム画面 -->
+        <div id="gameScreen" class="screen">
+            <div class="game-header">
+                <div class="score-display">
+                    <p>スコア: <span id="currentScore">0</span></p>
+                </div>
+                <div class="level-display">
+                    <p>レベル: <span id="currentLevel">1</span></p>
+                </div>
+            </div>
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+        </div>
+
+        <!-- ゲームオーバー画面 -->
+        <div id="gameOverScreen" class="screen">
+            <div class="game-over-content">
+                <h2 class="game-over-title">GAME OVER</h2>
+                <div class="score-result">
+                    <p class="score-label">スコア</p>
+                    <p class="score-value" id="finalScore">0</p>
+                </div>
+                <div class="high-score-result">
+                    <p class="score-label">ハイスコア</p>
+                    <p class="score-value" id="finalHighScore">0</p>
+                </div>
+                <button id="retryBtn" class="btn btn-primary">RETRY</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
