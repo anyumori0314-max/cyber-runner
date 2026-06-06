@@ -19,13 +19,19 @@ const gameState = {
     isRunning: false,
     isPaused: false,
     score: 0,
-    highScore: localStorage.getItem('cyberRunnerHighScore') || 0,
+    // localStorageから取得する際に数値に変換する
+    highScore: parseFloat(localStorage.getItem('cyberRunnerHighScore')) || 0,
     level: 1,
     gameTime: 0,
     startTime: 0,
     speed: INITIAL_SPEED,
     spawnRate: INITIAL_SPAWN_RATE
 };
+
+// RAF IDを保持してループを安定化
+let rafId = null;
+// 最後に発生したエラー情報
+let lastError = null;
 
 // ===================================
 // プレイヤーオブジェクト
@@ -85,6 +91,8 @@ class Obstacle {
 
     // 障害物を更新
     update() {
+        // 難易度変化に応じて既存の障害物も速度を追従させる
+        this.speed = gameState.speed;
         this.y += this.speed;
     }
 
@@ -180,45 +188,74 @@ startBtn.addEventListener('click', startGame);
 // RETRYボタン
 retryBtn.addEventListener('click', startGame);
 
+// ウィンドウのフォーカスを失ったときはキー状態をリセットして入力ループ停止を防ぐ
+window.addEventListener('blur', () => {
+    player.moveLeft = false;
+    player.moveRight = false;
+});
+
+// グローバルな例外捕捉（console.error を出さないように警告レベルで処理）
+window.addEventListener('error', (evt) => {
+    handleGameError(evt.error || evt.message || 'Unknown error');
+    // prevent default logging to console.error
+    evt.preventDefault();
+});
+
+window.addEventListener('unhandledrejection', (evt) => {
+    handleGameError(evt.reason || 'Unhandled rejection');
+    evt.preventDefault();
+});
+
 // ===================================
 // ゲーム開始
 // ===================================
 function startGame() {
-    // ゲーム状態をリセット
-    gameState.isRunning = true;
-    gameState.score = 0;
-    gameState.level = 1;
-    gameState.gameTime = 0;
-    gameState.speed = INITIAL_SPEED;
-    gameState.spawnRate = INITIAL_SPAWN_RATE;
-    gameState.startTime = Date.now();
+    // 既存のループがあれば停止してから再開（多重起動防止）
+    if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    }
 
-    // プレイヤー位置をリセット
-    player.x = CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2;
-    player.y = CANVAS_HEIGHT - PLAYER_HEIGHT - 20;
-
-    // 障害物をリセット
-    obstacles = [];
+    // すべての状態を初期化
+    resetAllState();
 
     // 画面遷移
     titleScreen.classList.remove('active');
     gameOverScreen.classList.remove('active');
     gameScreen.classList.add('active');
 
-    // ゲームループ開始
-    gameLoop();
+    // キャンバスのサイズを明示的に設定（レスポンシブ時のズレを防ぐ）
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+
+    // ゲームループ開始（安定したループ）
+    rafId = requestAnimationFrame(loop);
 }
 
 // ===================================
 // ゲーム終了
 // ===================================
 function endGame() {
+    // ループを停止
     gameState.isRunning = false;
+    if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    }
 
-    // ハイスコア更新
+    // キー入力状態をクリア
+    player.moveLeft = false;
+    player.moveRight = false;
+
+    // ハイスコア更新（数値比較）
     if (gameState.score > gameState.highScore) {
-        gameState.highScore = gameState.score;
-        localStorage.setItem('cyberRunnerHighScore', gameState.highScore);
+        gameState.highScore = Math.floor(gameState.score);
+        try {
+            localStorage.setItem('cyberRunnerHighScore', gameState.highScore);
+        } catch (e) {
+            // localStorageが使えない場合は警告に留める
+            console.warn('localStorage not available:', e);
+        }
     }
 
     // ゲームオーバー画面に表示
@@ -233,53 +270,61 @@ function endGame() {
 // ===================================
 // ゲームループ
 // ===================================
-function gameLoop() {
-    if (!gameState.isRunning) return;
+// 安定化されたメインループ
+function loop(timestamp) {
+    try {
+        if (!gameState.isRunning) return;
 
-    // ゲーム時間を更新
-    gameState.gameTime = (Date.now() - gameState.startTime) / 1000;
+        // ゲーム時間を更新
+        gameState.gameTime = (Date.now() - gameState.startTime) / 1000;
 
-    // スコアを更新（生存時間 * 10）
-    gameState.score = gameState.gameTime * 10;
+        // スコアを更新（生存時間 * 10）
+        gameState.score = gameState.gameTime * 10;
 
-    // レベルを更新
-    gameState.level = Math.floor(gameState.gameTime / 10) + 1;
+        // レベルを更新
+        gameState.level = Math.floor(gameState.gameTime / 10) + 1;
 
-    // 難易度を上げる
-    updateDifficulty();
+        // 難易度を上げる
+        updateDifficulty();
 
-    // プレイヤーを更新
-    player.update();
+        // プレイヤーを更新
+        player.update();
 
-    // 新しい障害物を生成
-    if (Math.random() < gameState.spawnRate) {
-        obstacles.push(new Obstacle());
-    }
-
-    // 障害物を更新と衝突判定
-    for (let i = obstacles.length - 1; i >= 0; i--) {
-        obstacles[i].update();
-
-        // 画面外に出た障害物を削除
-        if (obstacles[i].isOutOfBounds()) {
-            obstacles.splice(i, 1);
+        // 新しい障害物を生成
+        if (Math.random() < gameState.spawnRate) {
+            obstacles.push(new Obstacle());
         }
 
-        // プレイヤーとの衝突判定
-        if (obstacles[i].collidesWith(player)) {
-            endGame();
-            return;
+        // 障害物を更新と衝突判定（後方ループで安全にsplice）
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            const ob = obstacles[i];
+            ob.update();
+
+            // 画面外に出た障害物を削除
+            if (ob.isOutOfBounds()) {
+                obstacles.splice(i, 1);
+                continue;
+            }
+
+            // プレイヤーとの衝突判定
+            if (ob.collidesWith(player)) {
+                endGame();
+                return;
+            }
         }
+
+        // 画面を描画
+        draw();
+
+        // UIを更新
+        updateUI();
+
+        // 次フレームをリクエスト
+        rafId = requestAnimationFrame(loop);
+    } catch (err) {
+        // 例外が発生してもループを止めずに原因を可視化（console.errorは使わない）
+        handleGameError(err);
     }
-
-    // 画面を描画
-    draw();
-
-    // UIを更新
-    updateUI();
-
-    // 次フレームをリクエスト
-    requestAnimationFrame(gameLoop);
 }
 
 // ===================================
@@ -370,3 +415,70 @@ function init() {
 
 // ページ読み込み時に初期化
 init();
+
+// すべてのゲーム状態を初期化する（restart/retry 用）
+function resetAllState() {
+    gameState.isRunning = true;
+    gameState.isPaused = false;
+    gameState.score = 0;
+    gameState.level = 1;
+    gameState.gameTime = 0;
+    gameState.startTime = Date.now();
+    gameState.speed = INITIAL_SPEED;
+    gameState.spawnRate = INITIAL_SPAWN_RATE;
+
+    // 障害物やプレイヤーの状態をリセット
+    obstacles = [];
+    player.x = CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2;
+    player.y = CANVAS_HEIGHT - PLAYER_HEIGHT - 20;
+    player.moveLeft = false;
+    player.moveRight = false;
+
+    // 既存のエラーはクリア
+    lastError = null;
+    removeErrorOverlay();
+}
+
+// エラーを画面表示するオーバーレイを生成
+function showErrorOverlay(message) {
+    removeErrorOverlay();
+    const overlay = document.createElement('div');
+    overlay.id = 'errorOverlay';
+    overlay.style.position = 'fixed';
+    overlay.style.left = '10px';
+    overlay.style.bottom = '10px';
+    overlay.style.padding = '12px';
+    overlay.style.background = 'rgba(255, 0, 0, 0.9)';
+    overlay.style.color = '#fff';
+    overlay.style.fontSize = '12px';
+    overlay.style.zIndex = 9999;
+    overlay.style.borderRadius = '6px';
+    overlay.textContent = 'Error: ' + message;
+    document.body.appendChild(overlay);
+}
+
+function removeErrorOverlay() {
+    const existing = document.getElementById('errorOverlay');
+    if (existing) existing.remove();
+}
+
+// エラー発生時の共通処理（console.error は使わず警告で残す）
+function handleGameError(err) {
+    try {
+        const msg = err && err.stack ? (err.stack.toString()) : String(err);
+        lastError = msg;
+        // 開発者用に警告で残す
+        console.warn('Game error:', msg);
+        // ユーザーにも分かりやすくオーバーレイ表示
+        showErrorOverlay(msg.substring(0, 500));
+    } catch (e) {
+        // 最後の手段でログは残すが console.error を使わない
+        console.warn('Error handling failed', e);
+    }
+    // 必要ならゲームを止める
+    gameState.isRunning = false;
+    if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    }
+}
