@@ -22,8 +22,33 @@ const SPEED_UNIT_TO_PX_PER_SEC = 60;
 const PLAYER_SPEED_PX_PER_SEC = 360;
 // 1フレームあたりの最大 delta 秒（大きなジャンプを抑制して安定化）
 const MAX_DELTA_TIME = 0.1;
+const TARGET_FPS = 60;
 // 初期障害物速度（論理単位を使う場合の参考値）
 const INITIAL_OBSTACLE_SPEED = INITIAL_SPEED;
+
+// ====== エネルギーコア関連定数 ======
+const ENERGY_CORE_SPAWN_RATE = 0.03; // 本番用の出現率
+const ENERGY_CORE_SCORE = 100; // 基本スコア
+const ENERGY_CORE_WIDTH = 20;
+const ENERGY_CORE_HEIGHT = 20;
+
+// ====== コンボ関連定数 ======
+const COMBO_TIMEOUT = 5; // コンボリセット時間（秒）
+const COMBO_MULTIPLIERS = {
+    0: 1.0,
+    5: 1.5,
+    10: 2.0,
+    20: 3.0
+}; // コンボ数に応じた倍率
+
+// ====== ランク定義 ======
+const RANK_THRESHOLDS = [
+    { rank: 'S', score: 3000, message: '完璧だ！君はサイバーの支配者だ！' },
+    { rank: 'A', score: 2000, message: 'すばらしい！もう一度挑戦できるな' },
+    { rank: 'B', score: 1000, message: 'いい動きだ。次は頑張ろう' },
+    { rank: 'C', score: 500, message: 'まあまあ。練習だ' },
+    { rank: 'D', score: 0, message: 'もう一度。今度こそ！' }
+];
 
 // ===================================
 // ゲーム状態管理
@@ -44,7 +69,13 @@ const gameState = {
     spawnRate: INITIAL_SPAWN_RATE,
     powerupSpawnRate: INITIAL_POWERUP_SPAWN,
     slowFactor: 1,
-    specialChance: 0 // 特殊障害物出現率（時間経過で増加）
+    slowUntil: null,
+    specialChance: 0, // 特殊障害物出現率（時間経過で増加）
+    // ====== 新要素 ======
+    combo: 0, // 現在のコンボ数
+    maxCombo: 0, // 最大コンボ数（GAME OVER時のランク表示用）
+    comboLastTime: 0, // 最後にコアを取得した時刻（秒）
+    energyCoreSpawnRate: ENERGY_CORE_SPAWN_RATE
 };
 
 // RAF IDを保持してループを安定化
@@ -221,6 +252,8 @@ class Obstacle {
 // ===================================
 let obstacles = [];
 let powerUps = [];
+let energyCores = []; // 新: エネルギーコア
+let particles = []; // 新: パーティクル
 let popups = []; // テキストのフローティング表示
 let lastLevel = 0;
 
@@ -239,6 +272,10 @@ const finalScoreDisplay = document.getElementById('finalScore');
 const highScoreTitleDisplay = document.getElementById('highScoreTitle');
 const finalHighScoreDisplay = document.getElementById('finalHighScore');
 const currentLevelDisplay = document.getElementById('currentLevel');
+const comboTextDisplay = document.getElementById('comboText'); // 新: コンボ表示
+const rankDisplay = document.getElementById('rankDisplay'); // 新: ランク表示
+const maxComboResultDisplay = document.getElementById('maxComboResult'); // 新: 最大コンボ表示
+const rankMessageDisplay = document.getElementById('rankMessage'); // 新: ランクメッセージ
 const powerupStatusDisplay = document.createElement('div');
 powerupStatusDisplay.className = 'powerup-display';
 powerupStatusDisplay.id = 'powerupStatus';
@@ -330,10 +367,11 @@ class PowerUp {
         this.y = -30;
         this.width = 30;
         this.height = 30;
-        this.speed = gameState.speed * 0.6;
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * 0.6;
         this.color = this.type === 'shield' ? '#00eaff' : this.type === 'slow' ? '#ffaa00' : '#ffe066';
     }
     update(delta) {
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * 0.6;
         this.y += (this.speed * (delta || 0));
     }
     draw(ctx) {
@@ -363,6 +401,114 @@ class PowerUp {
             this.y < player.y + player.height &&
             this.y + this.height > player.y
         );
+    }
+}
+
+// ===================================
+// EnergyCore クラス
+// ===================================
+class EnergyCore {
+    constructor() {
+        this.x = Math.random() * (CANVAS_WIDTH - ENERGY_CORE_WIDTH);
+        this.y = -ENERGY_CORE_HEIGHT;
+        this.width = ENERGY_CORE_WIDTH;
+        this.height = ENERGY_CORE_HEIGHT;
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * 0.5;
+        this.color = '#ffff00'; // 黄色で目立つ
+        this.rotation = 0; // 回転アニメーション
+    }
+    update(delta) {
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * 0.5;
+        this.y += (this.speed * (delta || 0));
+        this.rotation += (delta || 0) * 3; // 回転速度
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+        ctx.rotate(this.rotation);
+        // 星形の中心部分
+        ctx.fillStyle = '#ffff00';
+        ctx.shadowColor = '#ffff00';
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+            const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+            const x = 8 * Math.cos(angle);
+            const y = 8 * Math.sin(angle);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        // 枠
+        ctx.strokeStyle = '#ffff88';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+    }
+    isOutOfBounds() {
+        return this.y > CANVAS_HEIGHT;
+    }
+    collidesWith(player) {
+        return (
+            this.x < player.x + player.width &&
+            this.x + this.width > player.x &&
+            this.y < player.y + player.height &&
+            this.y + this.height > player.y
+        );
+    }
+}
+
+// ===================================
+// Particle クラス（パーティクル効果）
+// ===================================
+class Particle {
+    constructor(x, y, type = 'core') {
+        this.x = x;
+        this.y = y;
+        this.type = type; // 'core', 'combo', 'shield' など
+        this.life = 1.0; // 0 ～ 1
+        this.lifeMax = type === 'core' ? 0.6 : 0.4;
+        if (type === 'core') {
+            this.vx = (Math.random() - 0.5) * 200;
+            this.vy = (Math.random() - 0.5) * 200;
+            this.size = 6;
+        } else if (type === 'combo') {
+            this.vx = 0;
+            this.vy = -100;
+            this.size = 10;
+        } else {
+            this.vx = (Math.random() - 0.5) * 100;
+            this.vy = (Math.random() - 0.5) * 100;
+            this.size = 4;
+        }
+    }
+    update(delta) {
+        this.life -= (delta || 0) / this.lifeMax;
+        this.x += this.vx * (delta || 0);
+        this.y += this.vy * (delta || 0);
+        this.vy += 300 * (delta || 0); // gravity
+    }
+    draw(ctx) {
+        const alpha = Math.max(0, this.life);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        if (this.type === 'core') {
+            ctx.fillStyle = '#ffff00';
+        } else if (this.type === 'combo') {
+            ctx.fillStyle = '#ff00ff';
+        } else {
+            ctx.fillStyle = '#00ffff';
+        }
+        ctx.shadowColor = ctx.fillStyle;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+    isDead() {
+        return this.life <= 0;
     }
 }
 
@@ -418,6 +564,32 @@ window.addEventListener('unhandledrejection', (evt) => {
     handleGameError(evt.reason || 'Unhandled rejection');
     evt.preventDefault();
 });
+
+// ===================================
+// ヘルパー関数
+// ===================================
+
+// スコアからランクを計算
+function calculateRank(score) {
+    for (let i = 0; i < RANK_THRESHOLDS.length; i++) {
+        if (score >= RANK_THRESHOLDS[i].score) {
+            return RANK_THRESHOLDS[i];
+        }
+    }
+    return RANK_THRESHOLDS[RANK_THRESHOLDS.length - 1];
+}
+
+// コンボ数から倍率を取得
+function getComboMultiplier(combo) {
+    if (combo >= 20) return COMBO_MULTIPLIERS[20];
+    if (combo >= 10) return COMBO_MULTIPLIERS[10];
+    if (combo >= 5) return COMBO_MULTIPLIERS[5];
+    return COMBO_MULTIPLIERS[0];
+}
+
+function shouldSpawn(rate, delta) {
+    return Math.random() < rate * (delta || 0) * TARGET_FPS;
+}
 
 // ===================================
 // ゲーム開始
@@ -488,6 +660,12 @@ function endGame() {
     // ゲームオーバー画面に表示
     finalScoreDisplay.textContent = Math.floor(gameState.score);
     finalHighScoreDisplay.textContent = gameState.highScore;
+    
+    // ランク評価を表示
+    const rank = calculateRank(Math.floor(gameState.score));
+    rankDisplay.textContent = rank.rank;
+    rankMessageDisplay.textContent = rank.message;
+    maxComboResultDisplay.textContent = gameState.maxCombo;
 
     // 画面遷移
     gameScreen.classList.remove('active');
@@ -514,14 +692,21 @@ function loop(timestamp) {
         // ゲーム時間を累積（秒）
         gameState.gameTime += delta;
 
-        // スコアを更新（生存時間 * 10）
-        gameState.score = gameState.gameTime * 10;
+        // スコアを更新（生存時間 * 10、コンボ倍率を適用）
+        const baseScore = gameState.gameTime * 10;
+        const multiplier = getComboMultiplier(gameState.combo);
+        gameState.score = baseScore * multiplier;
 
         // レベルを更新
         gameState.level = Math.floor(gameState.gameTime / 10) + 1;
 
         // 難易度を上げる
         updateDifficulty();
+
+        // コンボタイムアウトチェック（COMBO_TIMEOUT秒以上コアを取得していない）
+        if (gameState.combo > 0 && gameState.gameTime - gameState.comboLastTime > COMBO_TIMEOUT) {
+            gameState.combo = 0;
+        }
 
         // パワーアップ／シールドの期限チェック
         if (gameState.slowUntil && Date.now() > gameState.slowUntil) {
@@ -543,13 +728,18 @@ function loop(timestamp) {
         player.update(delta);
 
         // 新しい障害物を生成
-        if (Math.random() < gameState.spawnRate * (delta || 0)) {
+        if (shouldSpawn(gameState.spawnRate, delta)) {
             obstacles.push(new Obstacle());
         }
 
         // 新しいパワーアップを低確率で生成
-        if (Math.random() < gameState.powerupSpawnRate * (delta || 0)) {
+        if (shouldSpawn(gameState.powerupSpawnRate, delta)) {
             powerUps.push(new PowerUp());
+        }
+
+        // 新しいエネルギーコアを生成
+        if (shouldSpawn(gameState.energyCoreSpawnRate, delta)) {
+            energyCores.push(new EnergyCore());
         }
 
         // 障害物を更新と衝突判定（後方ループで安全にsplice）
@@ -592,6 +782,42 @@ function loop(timestamp) {
                 applyPowerUp(pu.type);
                 powerUps.splice(i, 1);
                 AudioManager.play('pickup');
+            }
+        }
+
+        // エネルギーコアを更新と衝突判定
+        for (let i = energyCores.length - 1; i >= 0; i--) {
+            const core = energyCores[i];
+            core.update(delta);
+            if (core.isOutOfBounds()) {
+                energyCores.splice(i, 1);
+                continue;
+            }
+            if (core.collidesWith(player)) {
+                // コア取得：スコア加算、コンボ増加、パーティクル生成
+                gameState.score += ENERGY_CORE_SCORE;
+                gameState.combo++;
+                if (gameState.combo > gameState.maxCombo) {
+                    gameState.maxCombo = gameState.combo;
+                }
+                gameState.comboLastTime = gameState.gameTime;
+                // パーティクル生成
+                for (let j = 0; j < 5; j++) {
+                    particles.push(new Particle(core.x + core.width / 2, core.y + core.height / 2, 'core'));
+                }
+                // コンボ表示パーティクル
+                particles.push(new Particle(player.x + player.width / 2, player.y - 20, 'combo'));
+                energyCores.splice(i, 1);
+                AudioManager.play('pickup');
+            }
+        }
+
+        // パーティクル更新
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.update(delta);
+            if (p.isDead()) {
+                particles.splice(i, 1);
             }
         }
 
@@ -676,6 +902,16 @@ function draw() {
         pu.draw(ctx);
     }
 
+    // エネルギーコアを描画
+    for (let core of energyCores) {
+        core.draw(ctx);
+    }
+
+    // パーティクルを描画
+    for (let particle of particles) {
+        particle.draw(ctx);
+    }
+
     // 障害物を描画
     for (let obstacle of obstacles) {
         obstacle.draw(ctx);
@@ -743,6 +979,15 @@ function updateUI() {
     currentScoreDisplay.textContent = Math.floor(gameState.score);
     currentLevelDisplay.textContent = gameState.level;
     highScoreTitleDisplay.textContent = gameState.highScore;
+    
+    // コンボ表示を更新
+    if (gameState.combo > 0) {
+        const multiplier = getComboMultiplier(gameState.combo);
+        const multiplierText = multiplier > 1.0 ? `x${multiplier.toFixed(1)}` : '';
+        comboTextDisplay.textContent = `COMBO: ${gameState.combo} ${multiplierText}`;
+    } else {
+        comboTextDisplay.textContent = '';
+    }
 }
 
 // ===================================
@@ -814,10 +1059,17 @@ function resetAllState() {
     gameState.slowFactor = 1;
     gameState.slowUntil = null;
     gameState.specialChance = 0;
+    // コンボのリセット
+    gameState.combo = 0;
+    gameState.maxCombo = 0;
+    gameState.comboLastTime = 0;
+    gameState.energyCoreSpawnRate = ENERGY_CORE_SPAWN_RATE;
 
     // 障害物やプレイヤーの状態をリセット
     obstacles = [];
     powerUps = [];
+    energyCores = []; // 新: エネルギーコアをリセット
+    particles = []; // 新: パーティクルをリセット
     popups = [];
     player.x = CANVAS_WIDTH / 2 - PLAYER_WIDTH / 2;
     player.y = CANVAS_HEIGHT - PLAYER_HEIGHT - 20;

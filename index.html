@@ -31,8 +31,11 @@
                 <div class="score-display">
                     <p>スコア: <span id="currentScore">0</span></p>
                 </div>
+                <div class="combo-display">
+                    <p id="comboText"></p>
+                </div>
                 <div class="level-display">
-                    <p>レベル: <span id="currentLevel">1</span></p>
+                    <p>Lv: <span id="currentLevel">1</span></p>
                 </div>
             </div>
             <canvas id="gameCanvas" width="800" height="600"></canvas>
@@ -42,6 +45,7 @@
         <div id="gameOverScreen" class="screen">
             <div class="game-over-content">
                 <h2 class="game-over-title">GAME OVER</h2>
+                <div class="rank-display" id="rankDisplay"></div>
                 <div class="score-result">
                     <p class="score-label">スコア</p>
                     <p class="score-value" id="finalScore">0</p>
@@ -50,6 +54,11 @@
                     <p class="score-label">ハイスコア</p>
                     <p class="score-value" id="finalHighScore">0</p>
                 </div>
+                <div class="combo-result">
+                    <p class="score-label">最大コンボ</p>
+                    <p class="score-value" id="maxComboResult">0</p>
+                </div>
+                <p class="rank-message" id="rankMessage"></p>
                 <button id="retryBtn" class="btn btn-primary">RETRY</button>
             </div>
         </div>
