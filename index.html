@@ -59,6 +59,20 @@
                     <p class="score-value" id="maxComboResult">0</p>
                 </div>
                 <p class="rank-message" id="rankMessage"></p>
+                <div class="score-submit">
+                    <label class="score-label" for="playerNameInput">PLAYER NAME</label>
+                    <div class="score-submit-row">
+                        <input id="playerNameInput" class="player-name-input" type="text" maxlength="12" autocomplete="off" placeholder="ANONYMOUS">
+                        <button id="sendScoreBtn" class="btn btn-primary btn-small">SEND SCORE</button>
+                    </div>
+                    <p class="leaderboard-status" id="leaderboardStatus"></p>
+                </div>
+                <div class="leaderboard-panel">
+                    <h3>GLOBAL TOP 10</h3>
+                    <ol id="leaderboardList" class="leaderboard-list">
+                        <li class="leaderboard-empty">Loading...</li>
+                    </ol>
+                </div>
                 <button id="retryBtn" class="btn btn-primary">RETRY</button>
             </div>
         </div>

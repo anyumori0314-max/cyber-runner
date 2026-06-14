@@ -13,6 +13,11 @@ const INITIAL_SPAWN_RATE = 0.02; // 障害物出現確率
 const MAX_SPAWN_RATE = 0.08;
 const INITIAL_POWERUP_SPAWN = 0.002;
 const MAX_POWERUP_SPAWN = 0.01;
+const SUPABASE_URL = 'https://pfgutguzgskdtntoovkc.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_2KnduyX5juuv05SGAlXqPw_aqwSRzQT';
+const LEADERBOARD_TABLE = 'leaderboard_scores';
+const PLAYER_NAME_MAX_LENGTH = 12;
+const DEFAULT_PLAYER_NAME = 'ANONYMOUS';
 
 // ====== Delta / speed 調整用定数 ======
 // 単位速度 (gameState.speed の 1.0) をピクセル/秒に変換する係数
@@ -256,6 +261,13 @@ let energyCores = []; // 新: エネルギーコア
 let particles = []; // 新: パーティクル
 let popups = []; // テキストのフローティング表示
 let lastLevel = 0;
+const leaderboardState = {
+    isSubmitting: false,
+    hasSubmitted: false,
+    lastScore: 0,
+    lastMaxCombo: 0,
+    lastRank: 'D'
+};
 
 // ===================================
 // DOM要素の取得
@@ -276,6 +288,10 @@ const comboTextDisplay = document.getElementById('comboText'); // 新: コンボ
 const rankDisplay = document.getElementById('rankDisplay'); // 新: ランク表示
 const maxComboResultDisplay = document.getElementById('maxComboResult'); // 新: 最大コンボ表示
 const rankMessageDisplay = document.getElementById('rankMessage'); // 新: ランクメッセージ
+const playerNameInput = document.getElementById('playerNameInput');
+const sendScoreBtn = document.getElementById('sendScoreBtn');
+const leaderboardStatusDisplay = document.getElementById('leaderboardStatus');
+const leaderboardListDisplay = document.getElementById('leaderboardList');
 const powerupStatusDisplay = document.createElement('div');
 powerupStatusDisplay.className = 'powerup-display';
 powerupStatusDisplay.id = 'powerupStatus';
@@ -541,6 +557,14 @@ startBtn.addEventListener('click', startGame);
 // RETRYボタン
 retryBtn.addEventListener('click', startGame);
 
+sendScoreBtn && sendScoreBtn.addEventListener('click', handleSendScore);
+
+playerNameInput && playerNameInput.addEventListener('input', () => {
+    if (playerNameInput.value.length > PLAYER_NAME_MAX_LENGTH) {
+        playerNameInput.value = playerNameInput.value.slice(0, PLAYER_NAME_MAX_LENGTH);
+    }
+});
+
 // ミュート切替
 muteBtn && muteBtn.addEventListener('click', () => {
     AudioManager.toggleMute();
@@ -589,6 +613,129 @@ function getComboMultiplier(combo) {
 
 function shouldSpawn(rate, delta) {
     return Math.random() < rate * (delta || 0) * TARGET_FPS;
+}
+
+function getPlayerName() {
+    const rawName = playerNameInput ? playerNameInput.value.trim() : '';
+    return (rawName || DEFAULT_PLAYER_NAME).slice(0, PLAYER_NAME_MAX_LENGTH);
+}
+
+function setLeaderboardStatus(message, isError = false) {
+    if (!leaderboardStatusDisplay) return;
+    leaderboardStatusDisplay.textContent = message || '';
+    leaderboardStatusDisplay.classList.toggle('error', Boolean(isError));
+}
+
+function updateSendScoreButton() {
+    if (!sendScoreBtn) return;
+    sendScoreBtn.disabled = leaderboardState.isSubmitting || leaderboardState.hasSubmitted;
+    if (leaderboardState.isSubmitting) {
+        sendScoreBtn.textContent = 'SENDING...';
+    } else if (leaderboardState.hasSubmitted) {
+        sendScoreBtn.textContent = 'SENT';
+    } else {
+        sendScoreBtn.textContent = 'SEND SCORE';
+    }
+}
+
+function getSupabaseHeaders() {
+    return {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+    };
+}
+
+async function insertLeaderboardScore() {
+    const payload = {
+        player_name: getPlayerName(),
+        score: leaderboardState.lastScore,
+        max_combo: leaderboardState.lastMaxCombo,
+        rank: leaderboardState.lastRank
+    };
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/${LEADERBOARD_TABLE}`, {
+        method: 'POST',
+        headers: {
+            ...getSupabaseHeaders(),
+            Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+        throw new Error(`Insert failed: ${response.status}`);
+    }
+}
+
+async function fetchLeaderboardScores() {
+    const query = 'select=player_name,score,max_combo,rank&order=score.desc,max_combo.desc,created_at.asc&limit=10';
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/${LEADERBOARD_TABLE}?${query}`, {
+        method: 'GET',
+        headers: getSupabaseHeaders(),
+        cache: 'no-store'
+    });
+    if (!response.ok) {
+        throw new Error(`Fetch failed: ${response.status}`);
+    }
+    return response.json();
+}
+
+function renderLeaderboard(scores) {
+    if (!leaderboardListDisplay) return;
+    leaderboardListDisplay.innerHTML = '';
+    if (!scores || scores.length === 0) {
+        const emptyItem = document.createElement('li');
+        emptyItem.className = 'leaderboard-empty';
+        emptyItem.textContent = 'No scores yet';
+        leaderboardListDisplay.appendChild(emptyItem);
+        return;
+    }
+    scores.forEach((entry) => {
+        const item = document.createElement('li');
+        const name = document.createElement('span');
+        const score = document.createElement('span');
+        name.className = 'leaderboard-name';
+        score.className = 'leaderboard-score';
+        name.textContent = `${entry.player_name || DEFAULT_PLAYER_NAME} [${entry.rank || '-'}]`;
+        score.textContent = `${Number(entry.score || 0)} / C${Number(entry.max_combo || 0)}`;
+        item.appendChild(name);
+        item.appendChild(score);
+        leaderboardListDisplay.appendChild(item);
+    });
+}
+
+async function loadLeaderboard() {
+    try {
+        const scores = await fetchLeaderboardScores();
+        renderLeaderboard(scores);
+        if (!leaderboardState.hasSubmitted && !leaderboardState.isSubmitting) {
+            setLeaderboardStatus('');
+        }
+    } catch (err) {
+        console.warn('Leaderboard load failed:', err);
+        if (leaderboardListDisplay) {
+            leaderboardListDisplay.innerHTML = '<li class="leaderboard-empty">Leaderboard unavailable</li>';
+        }
+        setLeaderboardStatus('Leaderboard connection failed. You can still play.', true);
+    }
+}
+
+async function handleSendScore() {
+    if (leaderboardState.isSubmitting || leaderboardState.hasSubmitted) return;
+    leaderboardState.isSubmitting = true;
+    setLeaderboardStatus('Sending score...');
+    updateSendScoreButton();
+    try {
+        await insertLeaderboardScore();
+        leaderboardState.hasSubmitted = true;
+        setLeaderboardStatus('Score sent.');
+        await loadLeaderboard();
+    } catch (err) {
+        console.warn('Leaderboard submit failed:', err);
+        setLeaderboardStatus('Score send failed. Please try again later.', true);
+    } finally {
+        leaderboardState.isSubmitting = false;
+        updateSendScoreButton();
+    }
 }
 
 // ===================================
@@ -666,6 +813,15 @@ function endGame() {
     rankDisplay.textContent = rank.rank;
     rankMessageDisplay.textContent = rank.message;
     maxComboResultDisplay.textContent = gameState.maxCombo;
+    leaderboardState.isSubmitting = false;
+    leaderboardState.hasSubmitted = false;
+    leaderboardState.lastScore = Math.floor(gameState.score);
+    leaderboardState.lastMaxCombo = gameState.maxCombo;
+    leaderboardState.lastRank = rank.rank;
+    if (playerNameInput) playerNameInput.value = '';
+    updateSendScoreButton();
+    setLeaderboardStatus('');
+    loadLeaderboard();
 
     // 画面遷移
     gameScreen.classList.remove('active');
@@ -997,6 +1153,8 @@ function init() {
     // ハイスコアを表示
     highScoreTitleDisplay.textContent = gameState.highScore;
     finalHighScoreDisplay.textContent = gameState.highScore;
+    updateSendScoreButton();
+    loadLeaderboard();
 }
 
 // ページ読み込み時に初期化
@@ -1087,6 +1245,10 @@ function resetAllState() {
     removeErrorOverlay();
     // lastTimestamp をリセットして delta 計算を初期化
     lastTimestamp = null;
+    leaderboardState.isSubmitting = false;
+    leaderboardState.hasSubmitted = false;
+    updateSendScoreButton();
+    setLeaderboardStatus('');
 }
 
 // エラーを画面表示するオーバーレイを生成

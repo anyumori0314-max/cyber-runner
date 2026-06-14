@@ -210,6 +210,9 @@ body {
 
 .game-over-content {
     text-align: center;
+    max-height: 100vh;
+    overflow-y: auto;
+    padding: 18px 20px;
 }
 
 .game-over-title {
@@ -273,6 +276,110 @@ body {
     letter-spacing: 2px;
 }
 
+.score-submit {
+    margin: 14px auto 8px;
+    width: min(520px, 90vw);
+}
+
+.score-submit-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.player-name-input {
+    width: 170px;
+    padding: 12px 14px;
+    border: 2px solid #00ffff;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    box-shadow: 0 0 12px rgba(0, 255, 255, 0.45);
+}
+
+.player-name-input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.btn-small {
+    padding: 12px 18px;
+    margin: 0;
+    font-size: 0.95rem;
+    letter-spacing: 1px;
+}
+
+.btn:disabled,
+.btn:disabled:hover {
+    cursor: not-allowed;
+    opacity: 0.55;
+    transform: none;
+    box-shadow: none;
+}
+
+.leaderboard-status {
+    min-height: 18px;
+    margin-top: 8px;
+    color: #00ff88;
+    font-size: 0.85rem;
+}
+
+.leaderboard-status.error {
+    color: #ff6688;
+}
+
+.leaderboard-panel {
+    width: min(520px, 90vw);
+    margin: 10px auto 6px;
+    padding: 12px 14px;
+    border: 1px solid rgba(0, 255, 255, 0.45);
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.leaderboard-panel h3 {
+    margin-bottom: 8px;
+    color: #00ffff;
+    font-size: 1rem;
+    letter-spacing: 2px;
+    text-shadow: 0 0 8px #00ffff;
+}
+
+.leaderboard-list {
+    list-style-position: inside;
+    text-align: left;
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.leaderboard-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.leaderboard-name {
+    max-width: 65%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.leaderboard-score {
+    color: #ffff00;
+    white-space: nowrap;
+}
+
+.leaderboard-empty {
+    justify-content: center;
+    color: #bfefff;
+}
+
 /* レスポンシブ対応 */
 @media (max-width: 900px) {
     .game-title {
@@ -289,6 +396,15 @@ body {
 
     .score-value {
         font-size: 2rem;
+    }
+
+    .score-submit-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .player-name-input {
+        width: 100%;
     }
 
     #gameCanvas {
