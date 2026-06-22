@@ -1,6 +1,19 @@
 // ===================================
 // ゲーム定数
 // ===================================
+// ===================================
+// Stage 1: 設定値と leaderboard サービスを ES Modules として import
+// ===================================
+import { PLAYER_NAME_MAX_LENGTH, DEFAULT_PLAYER_NAME } from './js/config.js';
+import {
+    leaderboardState,
+    configureLeaderboard,
+    loadLeaderboard,
+    handleSendScore,
+    prepareSubmission,
+    resetLeaderboardSubmission
+} from './js/services/leaderboard.js';
+
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 const PLAYER_WIDTH = 40;
@@ -13,11 +26,7 @@ const INITIAL_SPAWN_RATE = 0.02; // 障害物出現確率
 const MAX_SPAWN_RATE = 0.08;
 const INITIAL_POWERUP_SPAWN = 0.002;
 const MAX_POWERUP_SPAWN = 0.01;
-const SUPABASE_URL = 'https://pfgutguzgskdtntoovkc.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_2KnduyX5juuv05SGAlXqPw_aqwSRzQT';
-const LEADERBOARD_TABLE = 'leaderboard_scores';
-const PLAYER_NAME_MAX_LENGTH = 12;
-const DEFAULT_PLAYER_NAME = 'ANONYMOUS';
+// Supabase 接続情報・プレイヤー名設定は ./js/config.js へ分離（Stage 1）
 
 // ====== Delta / speed 調整用定数 ======
 // 単位速度 (gameState.speed の 1.0) をピクセル/秒に変換する係数
@@ -261,13 +270,7 @@ let energyCores = []; // 新: エネルギーコア
 let particles = []; // 新: パーティクル
 let popups = []; // テキストのフローティング表示
 let lastLevel = 0;
-const leaderboardState = {
-    isSubmitting: false,
-    hasSubmitted: false,
-    lastScore: 0,
-    lastMaxCombo: 0,
-    lastRank: 'D'
-};
+// leaderboardState は ./js/services/leaderboard.js から import（Stage 1）
 
 // ===================================
 // DOM要素の取得
@@ -615,10 +618,7 @@ function shouldSpawn(rate, delta) {
     return Math.random() < rate * (delta || 0) * TARGET_FPS;
 }
 
-function getPlayerName() {
-    const rawName = playerNameInput ? playerNameInput.value.trim() : '';
-    return (rawName || DEFAULT_PLAYER_NAME).slice(0, PLAYER_NAME_MAX_LENGTH);
-}
+// プレイヤー名の正規化・検証は ./js/services/leaderboard.js の normalizePlayerName へ分離（Stage 1）
 
 function setLeaderboardStatus(message, isError = false) {
     if (!leaderboardStatusDisplay) return;
@@ -638,46 +638,7 @@ function updateSendScoreButton() {
     }
 }
 
-function getSupabaseHeaders() {
-    return {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-    };
-}
-
-async function insertLeaderboardScore() {
-    const payload = {
-        player_name: getPlayerName(),
-        score: leaderboardState.lastScore,
-        max_combo: leaderboardState.lastMaxCombo,
-        rank: leaderboardState.lastRank
-    };
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/${LEADERBOARD_TABLE}`, {
-        method: 'POST',
-        headers: {
-            ...getSupabaseHeaders(),
-            Prefer: 'return=minimal'
-        },
-        body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-        throw new Error(`Insert failed: ${response.status}`);
-    }
-}
-
-async function fetchLeaderboardScores() {
-    const query = 'select=player_name,score,max_combo,rank&order=score.desc,max_combo.desc,created_at.asc&limit=10';
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/${LEADERBOARD_TABLE}?${query}`, {
-        method: 'GET',
-        headers: getSupabaseHeaders(),
-        cache: 'no-store'
-    });
-    if (!response.ok) {
-        throw new Error(`Fetch failed: ${response.status}`);
-    }
-    return response.json();
-}
+// Supabase 通信（HTTPヘッダー / INSERT / 取得）は ./js/services/leaderboard.js へ分離（Stage 1）
 
 function renderLeaderboard(scores) {
     if (!leaderboardListDisplay) return;
@@ -703,40 +664,8 @@ function renderLeaderboard(scores) {
     });
 }
 
-async function loadLeaderboard() {
-    try {
-        const scores = await fetchLeaderboardScores();
-        renderLeaderboard(scores);
-        if (!leaderboardState.hasSubmitted && !leaderboardState.isSubmitting) {
-            setLeaderboardStatus('');
-        }
-    } catch (err) {
-        console.warn('Leaderboard load failed:', err);
-        if (leaderboardListDisplay) {
-            leaderboardListDisplay.innerHTML = '<li class="leaderboard-empty">Leaderboard unavailable</li>';
-        }
-        setLeaderboardStatus('Leaderboard connection failed. You can still play.', true);
-    }
-}
-
-async function handleSendScore() {
-    if (leaderboardState.isSubmitting || leaderboardState.hasSubmitted) return;
-    leaderboardState.isSubmitting = true;
-    setLeaderboardStatus('Sending score...');
-    updateSendScoreButton();
-    try {
-        await insertLeaderboardScore();
-        leaderboardState.hasSubmitted = true;
-        setLeaderboardStatus('Score sent.');
-        await loadLeaderboard();
-    } catch (err) {
-        console.warn('Leaderboard submit failed:', err);
-        setLeaderboardStatus('Score send failed. Please try again later.', true);
-    } finally {
-        leaderboardState.isSubmitting = false;
-        updateSendScoreButton();
-    }
-}
+// loadLeaderboard / handleSendScore は ./js/services/leaderboard.js へ分離（Stage 1）
+// renderLeaderboard / setLeaderboardStatus / updateSendScoreButton は View として本ファイルに残す
 
 // ===================================
 // ゲーム開始
@@ -813,11 +742,11 @@ function endGame() {
     rankDisplay.textContent = rank.rank;
     rankMessageDisplay.textContent = rank.message;
     maxComboResultDisplay.textContent = gameState.maxCombo;
-    leaderboardState.isSubmitting = false;
-    leaderboardState.hasSubmitted = false;
-    leaderboardState.lastScore = Math.floor(gameState.score);
-    leaderboardState.lastMaxCombo = gameState.maxCombo;
-    leaderboardState.lastRank = rank.rank;
+    prepareSubmission({
+        score: Math.floor(gameState.score),
+        maxCombo: gameState.maxCombo,
+        rank: rank.rank
+    });
     if (playerNameInput) playerNameInput.value = '';
     updateSendScoreButton();
     setLeaderboardStatus('');
@@ -1153,6 +1082,19 @@ function init() {
     // ハイスコアを表示
     highScoreTitleDisplay.textContent = gameState.highScore;
     finalHighScoreDisplay.textContent = gameState.highScore;
+    // Stage 1: leaderboard サービスへ View コールバックを注入（通信とDOMの境界）
+    configureLeaderboard({
+        render: renderLeaderboard,
+        renderUnavailable: () => {
+            if (leaderboardListDisplay) {
+                leaderboardListDisplay.innerHTML = '<li class="leaderboard-empty">Leaderboard unavailable</li>';
+            }
+        },
+        setStatus: setLeaderboardStatus,
+        updateButton: updateSendScoreButton,
+        getRawName: () => (playerNameInput ? playerNameInput.value : '')
+    });
+
     updateSendScoreButton();
     loadLeaderboard();
 }
@@ -1245,8 +1187,7 @@ function resetAllState() {
     removeErrorOverlay();
     // lastTimestamp をリセットして delta 計算を初期化
     lastTimestamp = null;
-    leaderboardState.isSubmitting = false;
-    leaderboardState.hasSubmitted = false;
+    resetLeaderboardSubmission();
     updateSendScoreButton();
     setLeaderboardStatus('');
 }
