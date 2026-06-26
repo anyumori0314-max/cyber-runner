@@ -4,7 +4,7 @@
 // 責務: 例外の安全な整形 / エラーオーバーレイ表示 / グローバル例外捕捉
 //       （window 'error' / 'unhandledrejection'）。
 //
-// ゲームループの停止など「ゲーム状態に依存する復旧処理」は script.js が所有するため、
+// ゲームループの停止など「ゲーム状態に依存する復旧処理」は controller が所有するため、
 // configureErrors({ onError }) でコールバックを注入して委譲する（責務の分離）。
 // console.error は使わず警告に留める方針も従来どおり維持。
 // ===================================
@@ -15,7 +15,7 @@ let lastError = null;
 // グローバル例外ハンドラの登録済み状態（重複登録防止のため）。
 let handlersRegistered = false;
 
-// ゲーム継続/停止に必要な復旧処理（ループ停止など）。script.js から注入する。
+// ゲーム継続/停止に必要な復旧処理（ループ停止など）。controller (main.js) から注入する。
 let onGameError = () => {};
 
 // 復旧コールバックを注入する。
@@ -77,7 +77,7 @@ export function handleGameError(err) {
         // 最後の手段でログは残すが console.error を使わない
         console.warn('Error handling failed', e);
     }
-    // 必要ならゲームを止める等の復旧処理は呼び出し側（script.js）へ委譲
+    // 必要ならゲームを止める等の復旧処理は呼び出し側（controller）へ委譲
     try {
         onGameError(err);
     } catch (e) {

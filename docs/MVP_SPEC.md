@@ -1,8 +1,15 @@
 # MVP仕様書 — 避けろ！サイバーランナー
 
-> 本書は **Stage 0（設計資料整備）** の成果物です。
-> 現行コード（`index.html` / `style.css` / `script.js`）の **実装挙動をそのまま記述** したものであり、
-> このStageではゲーム挙動を一切変更していません。数値・仕様はすべて現行コード基準です。
+> 本書は **Stage 0 で起草し、Stage 1〜5 のリファクタリング完了に合わせて現行実装へ更新** しています。
+> ゲーム挙動（数値・バランス・ルール）はリファクタ前後で等価です。
+>
+> **現在の実装構成**:
+> - エントリーポイントは **`js/main.js`**（`index.html` は `<script type="module" src="./js/main.js">` を読み込む）。
+> - 旧 `script.js`（単一ファイル）は **削除済み**。責務は ES Modules による
+>   **Model / View / Controller + Services・Audio・Util** へ分離済み（詳細は [MVC_DESIGN](./MVC_DESIGN.md) / [README](../README.md)）。
+> - 構成は `js/config.js`・`js/state.js`・`js/model/*`・`js/view/*`・`js/controller/*`・
+>   `js/services/leaderboard.js`・`js/audio/audio-manager.js`・`js/util/errors.js`。
+> - スコアは **生存点の差分加算方式**（コンボ倍率低下でも既獲得分は減少しない。詳細は §5.6）。
 
 ---
 
@@ -28,6 +35,7 @@
 ## 4. 使用技術
 
 - HTML / CSS / JavaScript（フレームワーク・ビルドツールなし）
+- ES Modules（`<script type="module">` + `import`/`export`。エントリーは `js/main.js`）
 - Canvas API（ゲーム描画・タイトル背景アニメ、`800x600` 論理解像度、HiDPI対応）
 - Web Audio API（効果音をコード生成。外部音声ファイル不使用）
 - localStorage（ローカルハイスコア永続化）
@@ -49,7 +57,7 @@
 
 ### 5.2 タイトル画面
 
-- `titleCanvas` に背景アニメーションを `requestAnimationFrame` で描画（`animateTitleCanvas`）。
+- `titleCanvas` に背景アニメーションを `requestAnimationFrame` で描画（`view/title-animation.js` の `startTitleAnimation`）。
 - ハイスコア（`highScoreTitle`）を localStorage から読み込んで表示。
 - **START**: ゲーム開始。**SOUND**: ミュートトグル。
 
@@ -87,18 +95,33 @@
 - `specialChance = min(0.05 + gameTime / 1200, 0.4)`（時間経過で特殊種が最大40%まで増加）。
 - 出現判定: `shouldSpawn(rate, delta) = Math.random() < rate × delta × TARGET_FPS(60)`（フレームレート非依存の確率制御）。
 
-### 5.6 スコア計算 ※現行仕様（Stage 0では変更しない）
+### 5.6 スコア計算 ※現行仕様（生存点の差分加算方式）
 
-- 基本式: **`score = gameTime × 10 × コンボ倍率`**
-- **この計算はゲームループ内で毎フレーム実行され、`gameState.score` を上書きする**（`script.js` の `loop`）。
-- そのため、以下の「直接加算」は **加算された次フレームで上書きされ、表示スコアには永続的に反映されない**:
-  - エネルギーコア取得時の `+100`（`ENERGY_CORE_SCORE`）
-  - ボーナスアイテム取得時の `+50`
-- 結果として、コア／ボーナスの主なスコア寄与は **コンボ倍率の上昇を通じた間接的なもの**となる（コア取得 → コンボ増加 → 倍率上昇 → 生存スコア全体が倍化）。
-- 表示は `Math.floor(gameState.score)`。
+スコアは **生存スコア（`survivalScore`）** と **加算スコア（`bonusScore`）** の2系統で管理し、最終スコアは両者の合成。
+ロジックは `model/scoring.js` に集約（`controller/game-loop.js` のループから呼ばれる）。
 
-> ⚠️ **重要**: この「毎フレーム再計算・上書き」は **現行仕様**として確定的に扱う。
-> バグか意図かの判断・修正は本Stageでは行わない。将来変更する場合は独立したPR・仕様変更として扱うこと（[BEST_PRACTICES](./BEST_PRACTICES.md)・[MVC_DESIGN](./MVC_DESIGN.md) 参照）。
+- **生存スコアの差分加算**（毎フレーム、再計算・上書きではなく加算）:
+  ```js
+  survivalScore += delta * 10 * multiplier;   // multiplier = コンボ倍率
+  ```
+  各フレームの獲得点に、その時点の倍率だけを適用するため、**倍率が下がっても過去フレームの獲得分は再計算されない**。
+- **加算スコアの累積保持**（毎フレーム上書きしないため消えない）:
+  - エネルギーコア取得時 `bonusScore += 100`（`ENERGY_CORE_SCORE`）
+  - ボーナスアイテム取得時 `bonusScore += 50`（`BONUS_SCORE`）
+  - **コンボ倍率は加算スコアには掛けない**（生存スコアのみに適用）。
+- **最終スコアの合成**（合成のみ。倍率の再適用なし）:
+  ```js
+  score = survivalScore + bonusScore;
+  ```
+- 表示・確定値は `Math.floor(gameState.score)`。
+- **コンボ倍率が 3倍 → 1倍 に下がっても、表示スコアは減少しない**（生存分は加算済み・加算スコアは保持）。
+
+> ✅ GAME OVER の最終スコア / ランク判定 / localStorage ハイスコア / Supabase 送信は、いずれも
+> **同一の丸め済み最終スコア（`Math.floor(gameState.score)`）** を使う（値の不一致は生じない）。
+
+> 🗄️ **旧仕様（参考・現在は廃止）**: Stage 1 以前は `score = gameTime × 10 × コンボ倍率` を毎フレーム
+> 再計算・上書きしており、コア `+100`・ボーナス `+50` が次フレームで上書きされ、かつコンボ倍率低下時に
+> 表示スコアが減少していた。**この挙動は Stage 2 で上記の差分加算方式へ修正済みで、現行仕様ではない。**
 
 ### 5.7 レベルと難易度上昇
 
@@ -123,7 +146,7 @@
 |---|---|---|---|
 | シールド | S | 障害物を1回だけ無効化（視覚表示あり） | 8秒（または1回被弾するまで） |
 | スロー | T | 障害物全体の速度を 0.5 倍 | 6秒 |
-| ボーナス | + | 取得時に `+50`（※5.6の上書き仕様に従う） | 即時 |
+| ボーナス | + | 取得時に `bonusScore += 50`（累積保持・§5.6） | 即時 |
 
 - 取得時に短いポップアップ表示（`Shield Acquired` / `Slow Down` / `+50`）。
 - シールド被弾時は障害物を消去し `Shield!` 表示＋pickup音（ゲームオーバーにならない）。
@@ -131,7 +154,7 @@
 ### 5.9 エネルギーコア
 
 - 出現率 `0.03`。接触取得で:
-  - `score += 100`（※5.6の上書き仕様に従う）
+  - `bonusScore += 100`（累積保持・§5.6）
   - `combo++`、`maxCombo` 更新
   - `comboLastTime` を現在の `gameTime` に更新
   - パーティクル生成（core 5個 + combo 1個）、pickup音
@@ -164,8 +187,10 @@
 
 ### 5.12 localStorage ハイスコア
 
-- キー: `cyberRunnerHighScore`（`parseFloat` で数値化、未設定時 0）。
-- スコアがハイスコアを更新した場合に保存。タイトル/ゲームオーバー画面に表示。
+- キー: `cyberRunnerHighScore`（変更なし）。
+- **初期読込（`state.js` の `loadInitialHighScore`）**: `localStorage` から数値化して読み込み、未設定・不正値は 0。
+  `localStorage.getItem` が例外を投げる環境でも、`try/catch` で 0 にフォールバックして `state.js` の読み込み／ゲーム起動を止めない（内部例外はユーザー画面に出さず `console.warn` のみ）。
+- 更新仕様（変更なし）: 最終スコアがハイスコアを更新した場合に `Math.floor` 値を保存。タイトル/ゲームオーバー画面に表示。
 
 ### 5.13 Supabase 全ユーザー共通ランキング
 
@@ -184,10 +209,10 @@
 ## 6. 非機能要件
 
 - **目標**: 60fps を目安に滑らかに動作。
-- **ゲームループ安定化（現行・維持必須）**:
-  - `requestAnimationFrame` の多重起動防止（`rafId` 管理）。
+- **ゲームループ安定化（現行・維持必須。`controller/game-loop.js`）**:
+  - `requestAnimationFrame` を常に1本に保つ（`state.js` の `loopState.rafId` 管理・多重起動防止）。
   - `deltaTime`（秒）による更新。`MAX_DELTA_TIME = 0.1` で大ジャンプを抑制。
-  - ループ内 `try/catch` ＋ グローバル `error` / `unhandledrejection` 捕捉でエラーオーバーレイ表示。
+  - ループ内 `try/catch` ＋ グローバル `error` / `unhandledrejection` 捕捉（`util/errors.js`）でエラーオーバーレイ表示。
   - 配列の削除は逆順 `splice`（インデックスずれ防止）。
 - **HiDPI**: `devicePixelRatio` に応じて Canvas をスケール。
 - **オフライン耐性**: Supabase通信が失敗してもゲームは継続可能（プレイは妨げない）。
@@ -197,7 +222,7 @@
 
 ## 7. 既知の仕様・曖昧点
 
-1. **スコアの毎フレーム上書き（5.6）**: コア `+100`・ボーナス `+50` は次フレームで上書きされ、表示上は1フレームのみ反映。現行仕様として固定（修正は別Stage）。
+1. **スコア計算（5.6）**: 生存点の差分加算＋加算スコア累積＋合成方式（コンボ倍率低下でも非減少）。旧「毎フレーム上書き」方式は Stage 2 で廃止済み。
 2. **未使用フィールド/定数**: `gameState.isPaused`、`gameState.startTime`、`INITIAL_OBSTACLE_SPEED` は実質未使用。
 3. **ログ出力**: ゲームループは `console.error` を使わずオーバーレイ表示。一方、リーダーボード処理は失敗時に `console.warn` を使用。
 4. **タイトル背景アニメ**は HiDPI スケール対象外（ゲームCanvasのみ対象）。
@@ -234,4 +259,4 @@
 14. RETRY で全状態リセット
 15. エラーオーバーレイ表示とループ挙動
 16. HiDPI（devicePixelRatio）描画、SOUND トグル
-17. **スコア毎フレーム上書き仕様**が変化していないこと（意図的判断を記録）
+17. **スコア計算仕様**（生存点の差分加算 + 加算スコア累積 + 合成、コンボ倍率低下でも非減少）が変化していないこと

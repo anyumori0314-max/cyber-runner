@@ -1,8 +1,17 @@
 # MVC設計書 — ゲーム向けMVC風 責務分離
 
-> 本書は **Stage 0** の成果物です。現行 `script.js`（単一ファイル・約1300行）の責務を整理し、
-> 段階的に「ゲーム向けMVC風」の責務分離へ移行するための設計方針を定めます。
-> Stage 0 ではコードを分割しません。本書は **移行の地図** です。
+> 本書は **Stage 0** で起草した設計の地図であり、**Stage 1〜5 の実装完了に合わせて更新**しています。
+> 旧 `script.js`（単一ファイル）の責務を「ゲーム向けMVC風」へ段階的に分離し、現在は
+> `js/main.js` をエントリーとする Model / View / Controller + Services・Audio・Util 構成へ移行済みです。
+>
+> **実装ステータス（2026 時点）**:
+> - Stage 1（Services/config 分離）… 完了
+> - Stage 2（Audio/Errors 分離・スコアリセット修正）… 完了
+> - Stage 3（Model 分離: `state.js` / `model/*`）… **完了**
+> - Stage 4（View 分離: `view/*`）… **完了**
+> - Stage 5（Controller 分離・`main.js` 化、旧 `script.js` 削除）… **完了**
+>
+> 最新の実際のファイル構成は [README](../README.md) を参照してください。
 
 ---
 
@@ -32,7 +41,8 @@
 
 ## 3. 現在の `script.js` 責務分類
 
-現行コードの責務マッピング（行は目安。Stage進行で更新）。
+下表は **分離前の旧 `script.js`** の責務マッピング（行は当時の目安）です。各責務は Stage 3〜5 で
+対応モジュール（`model/*`・`state.js`・`view/*`・`controller/*`）へ実際に分離済みです。
 
 | 観点 | 該当箇所（行・目安） | 内容 |
 |---|---|---|
@@ -116,14 +126,14 @@
 
 各 Stage は **1 PR・機能等価・回帰テスト通過** を必須とする（[BEST_PRACTICES](./BEST_PRACTICES.md) の17項目）。
 
-| Stage | 内容 | 分離対象 | リスク |
+| Stage | 内容 | 分離対象 | 状態 |
 |---|---|---|---|
-| **0（本Stage）** | 設計資料整備（docs 3点）。コード不変。 | なし | なし |
-| **1（最優先）** | ES module足場 + **Supabase/leaderboard分離** + `config` | `services/leaderboard.js`, `config.js` | 低（呼出点は init / endGame の2箇所） |
-| **2** | 横断的関心の分離 | `audio/audio-manager.js`, `util/errors.js` | 低（自己完結） |
-| **3** | Model抽出 | `model/entities.js`, `scoring.js`, `difficulty.js`, `powerups.js`, `state.js` | 中（state共有・循環依存に注意） |
-| **4** | View抽出 | `view/renderer.js`, `hud.js`, `screens.js`, `title-anim.js`, `leaderboard-view.js` | 中（ctx/DOM参照の受け渡し） |
-| **5** | Controller抽出・`main.js` 薄化 | `controller/game-loop.js`, `input.js` | 中（ループ安定化を厳守） |
+| **0** | 設計資料整備（docs 3点）。コード不変。 | なし | 完了 |
+| **1** | ES module足場 + **Supabase/leaderboard分離** + `config` | `services/leaderboard.js`, `config.js` | 完了 |
+| **2** | 横断的関心の分離 + スコアリセット修正 | `audio/audio-manager.js`, `util/errors.js` | 完了 |
+| **3** | Model抽出 | `state.js`, `model/entities.js`, `model/scoring.js`, `model/difficulty.js`, `model/powerups.js` | **完了** |
+| **4** | View抽出 | `view/renderer.js`, `view/hud.js`, `view/screens.js`, `view/title-animation.js`, `view/leaderboard-view.js` | **完了** |
+| **5** | Controller抽出・`main.js` 化（旧 `script.js` 削除） | `controller/game-loop.js`, `controller/input.js`, `main.js` | **完了** |
 
 ### 推奨ファイル構成（最終ターゲット）
 
@@ -141,10 +151,10 @@ cyber-runner/
 │   │   ├── difficulty.js   # updateDifficulty / shouldSpawn
 │   │   └── powerups.js     # applyPowerUp
 │   ├── view/
-│   │   ├── renderer.js     # draw / drawGrid
-│   │   ├── hud.js          # updateUI / powerup表示
-│   │   ├── screens.js      # 画面遷移
-│   │   ├── title-anim.js   # animateTitleCanvas
+│   │   ├── renderer.js          # drawScene / drawGrid
+│   │   ├── hud.js               # updateHud / powerup・SOUND表示
+│   │   ├── screens.js           # 画面遷移 / GAME OVER結果表示
+│   │   ├── title-animation.js   # startTitleAnimation
 │   │   └── leaderboard-view.js
 │   ├── controller/
 │   │   ├── game-loop.js    # loop / startGame / endGame / resetAllState
@@ -156,7 +166,8 @@ cyber-runner/
 └── docs/
 ```
 
-> 「一度に全分割しない」方針のため、初期Stageでは `main.js`（=旧 `script.js`）＋少数モジュールに留め、外周から段階的に剥離する。
+> 「一度に全分割しない」ストラングラー方式で外周から段階的に剥離し、最終的に旧 `script.js` を削除して
+> `main.js`（配線のみ）＋上記モジュール群へ移行完了した。
 
 ---
 
@@ -198,12 +209,13 @@ cyber-runner/
 入力(キー状態) ─▶ Controller(loop)
    │  delta算出 (MAX_DELTA_TIMEでクランプ)
    ▼
-Model更新: gameTime累積 → score再計算(=gameTime*10*倍率) → 難易度更新
-          → spawn判定 → エンティティupdate → 衝突判定 → コンボ/パワーアップ
+Model更新: gameTime累積 → 生存スコア差分加算(survivalScore += delta*10*倍率)
+          → 合成(score = survivalScore + bonusScore) → 難易度更新
+          → spawn判定 → エンティティupdate → 衝突判定 → コンボ/パワーアップ(+100/+50)
    ▼
-View描画: draw()（Canvas） + updateUI()（HUD）
+View描画: drawScene(ctx)（Canvas） + updateHud()（HUD）
    ▼
-requestAnimationFrame(loop)  ← rafIdで多重起動防止
+requestAnimationFrame(loop)  ← loopState.rafIdで常に1本に保つ（多重起動防止）
 ```
 
 - 例外発生時は `try/catch` → `handleGameError` でオーバーレイ表示（ループ全体を保護）。
@@ -217,9 +229,9 @@ requestAnimationFrame(loop)  ← rafIdで多重起動防止
 |---|---|
 | モジュール化で**循環依存** | `config`/`state` をリーフ化、Model↔View直接参照禁止、Controller経由 |
 | グローバル状態の**取りこぼし/二重定義** | 単一 state モジュールへ集約、import で参照共有 |
-| **ループ安定化の破壊**（RAF/delta/try-catch） | `loop` 本体は Stage 5 まで触らず、最後に移設 |
+| **ループ安定化の破壊**（RAF/delta/try-catch） | `loop` 本体は Stage 5 で `controller/game-loop.js` へ移設。RAFは常に1本・deltaクランプ・例外保護を維持 |
 | `file://` で動かない | ローカルサーバー必須を明記（既存README維持） |
-| **スコア毎フレーム上書き**を無意識に変更 | 現行仕様として固定（[MVP_SPEC](./MVP_SPEC.md) §5.6）。変更は別PR |
+| **スコア計算仕様**を無意識に変更 | 現行仕様（生存スコアの差分加算 `survivalScore += delta*10*倍率`、合成 `score = survivalScore + bonusScore`、倍率低下でも非減少）を `model/scoring.js` に集約し維持。変更は別PR |
 | GitHub Pages パス解決 | 相対パス厳守、`<base>` 不使用 |
 | Supabaseキー/RLS運用の誤変更 | publishable key のみ・service_role禁止・config集約のみ |
 | 機能差分の見落とし | 各Stageで回帰17項目 + Codex第三者レビュー |
