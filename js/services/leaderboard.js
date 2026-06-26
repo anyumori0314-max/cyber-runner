@@ -2,7 +2,7 @@
 // services/leaderboard.js — グローバルランキングの通信とランキング状態（Stage 1）
 //
 // 責務: Supabase との通信（取得 / 送信）と、ランキング送信状態の管理。
-// DOM 描画・ボタン表示は View（script.js 側）に残し、View コールバックを
+// DOM 描画・ボタン表示は View（view/leaderboard-view.js）に残し、View コールバックを
 // configureLeaderboard() で注入して使う（= 通信と DOM の境界）。
 //
 // publishable key は公開前提。service_role key は使用しない。RLS 前提。
@@ -28,7 +28,7 @@ export const leaderboardState = {
     lastRank: 'D'
 };
 
-// View コールバック（通信と DOM の境界）。script.js から configureLeaderboard で注入する。
+// View コールバック（通信と DOM の境界）。main.js から configureLeaderboard で注入する。
 let view = {
     render: () => {},
     renderUnavailable: () => {},

@@ -63,7 +63,7 @@
 - 想定ポリシー: `leaderboard_scores` への anon の INSERT / SELECT を許可。UPDATE/DELETE は許可しない（要確認）。
 
 ### 3.4 入力検証
-- プレイヤー名は `trim` → 空なら `ANONYMOUS` → 先頭 12 文字に切り詰め（現行 `getPlayerName` の挙動を維持）。
+- プレイヤー名は `trim` → 空なら `ANONYMOUS` → 先頭 12 文字に切り詰め（`services/leaderboard.js` の `normalizePlayerName` で実施）。
 - 送信 payload は必要なカラム（`player_name`/`score`/`max_combo`/`rank`）のみに限定する。
 
 ### 3.5 textContent を使用する
@@ -97,9 +97,12 @@
 
 > ⚠️ これらの安定化処理は**回帰で壊さないことが最重要**。`loop` 本体への変更は最後（[MVC_DESIGN](./MVC_DESIGN.md) Stage 5）に限定する。
 
-### 4.5 スコア計算の現行仕様を尊重する
-- スコアは毎フレーム `score = gameTime × 10 × コンボ倍率` で再計算・上書きされる（[MVP_SPEC](./MVP_SPEC.md) §5.6）。
-- コア `+100`・ボーナス `+50` の直接加算は次フレームで上書きされる。これは**現行仕様**であり、リファクタで無意識に「修正」しない。変更する場合は独立した仕様変更PRとして扱う。
+### 4.5 スコア計算の現行仕様を尊重する（Stage 2 で修正済み）
+- 生存スコアは毎フレーム **差分加算**する: `survivalScore += delta × 10 × コンボ倍率`。
+- 加算スコアは累積保持する: コア `+100` / ボーナス `+50` を `bonusScore` に積む（コンボ倍率は掛けない）。
+- 最終スコアは合成のみ: `score = survivalScore + bonusScore`。倍率の再適用はしない。
+- この方式により **コンボ倍率が下がってもスコアは減少しない**（旧「毎フレーム再計算・上書き」方式で起きていた減少を Stage 2 で修正）。
+- スコアロジックは `model/scoring.js` に集約。リファクタで無意識に旧方式へ戻さない。変更する場合は独立した仕様変更PRとして扱う。
 
 ---
 
@@ -107,7 +110,7 @@
 
 ### 5.1 Git ブランチ・PR運用
 - `main` は常にデプロイ可能な状態を保つ（GitHub Pages 公開元）。
-- 作業はフィーチャーブランチで行う（本リファクタは `feature/mvc-refactor`）。
+- 作業はフィーチャーブランチで行う（Stage 1〜2 は `feature/mvc-refactor`、Stage 3〜5 は `feature/mvc-complete-refactor`）。
 - 直接 `main` へコミット・push しない。マージは PR 経由。
 
 ### 5.2 1 ステージ 1 PR
@@ -159,4 +162,4 @@
 14. RETRY で全状態リセット
 15. エラーオーバーレイ表示とループ挙動
 16. HiDPI（devicePixelRatio）描画、SOUND トグル
-17. **スコア毎フレーム上書き仕様**が変化していないこと（意図的判断を記録）
+17. **スコア計算仕様**（生存スコアの差分加算 + 加算スコア累積 + 合成、倍率低下でも非減少）が変化していないこと
