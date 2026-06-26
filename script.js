@@ -13,6 +13,14 @@ import {
     prepareSubmission,
     resetLeaderboardSubmission
 } from './js/services/leaderboard.js';
+// Stage 2: AudioManager とエラー処理を ES Modules として import
+import { AudioManager } from './js/audio/audio-manager.js';
+import {
+    configureErrors,
+    registerGlobalErrorHandlers,
+    handleGameError,
+    clearError
+} from './js/util/errors.js';
 
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
@@ -70,7 +78,12 @@ const RANK_THRESHOLDS = [
 const gameState = {
     isRunning: false,
     isPaused: false,
+    // 最終表示スコア = survivalScore + bonusScore（毎フレーム合成）
     score: 0,
+    // 生存時間 × コンボ倍率から毎フレーム算出する基本スコア
+    survivalScore: 0,
+    // エネルギーコア / ボーナスで得た加算スコア（毎フレーム上書きしない・累積）
+    bonusScore: 0,
     // localStorageから取得する際に数値に変換する
     highScore: parseFloat(localStorage.getItem('cyberRunnerHighScore')) || 0,
     level: 1,
@@ -94,8 +107,7 @@ const gameState = {
 
 // RAF IDを保持してループを安定化
 let rafId = null;
-// 最後に発生したエラー情報
-let lastError = null;
+// 最後に発生したエラー情報は ./js/util/errors.js が保持（Stage 2）
 // 前フレームの timestamp（ms）
 let lastTimestamp = null;
 
@@ -304,76 +316,7 @@ if (gameHeader) gameHeader.appendChild(powerupStatusDisplay);
 const titleCanvas = document.getElementById('titleCanvas');
 const muteBtn = document.getElementById('muteBtn');
 
-// ===================================
-// AudioManager: Web Audio で簡易的な効果音を生成
-// ===================================
-const AudioManager = {
-    ctx: null,
-    master: null,
-    muted: false,
-    init() {
-        if (this.ctx) return;
-        try {
-            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-            this.master = this.ctx.createGain();
-            this.master.gain.value = this.muted ? 0 : 0.18;
-            this.master.connect(this.ctx.destination);
-        } catch (e) {
-            console.warn('Audio init failed', e);
-        }
-    },
-    toggleMute() {
-        this.muted = !this.muted;
-        if (this.master) this.master.gain.value = this.muted ? 0 : 0.18;
-    },
-    play(name) {
-        if (!this.ctx) return;
-        try {
-            if (this.ctx.state === 'suspended') this.ctx.resume();
-            const t = this.ctx.currentTime;
-            const o = this.ctx.createOscillator();
-            const g = this.ctx.createGain();
-            o.connect(g);
-            g.connect(this.master);
-            // 簡易な音色定義
-            if (name === 'start') {
-                o.type = 'sine';
-                o.frequency.setValueAtTime(880, t);
-                g.gain.setValueAtTime(0.0001, t);
-                g.gain.exponentialRampToValueAtTime(0.08, t + 0.02);
-                g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-                o.start(t);
-                o.stop(t + 0.3);
-            } else if (name === 'levelUp') {
-                o.type = 'triangle';
-                o.frequency.setValueAtTime(660, t);
-                g.gain.setValueAtTime(0.0001, t);
-                g.gain.exponentialRampToValueAtTime(0.06, t + 0.01);
-                g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-                o.start(t);
-                o.stop(t + 0.22);
-            } else if (name === 'pickup') {
-                o.type = 'sawtooth';
-                o.frequency.setValueAtTime(1200, t);
-                g.gain.setValueAtTime(0.0001, t);
-                g.gain.exponentialRampToValueAtTime(0.08, t + 0.005);
-                g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-                o.start(t);
-                o.stop(t + 0.16);
-            } else if (name === 'gameover') {
-                o.type = 'sine';
-                o.frequency.setValueAtTime(200, t);
-                g.gain.setValueAtTime(0.0001, t);
-                g.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
-                g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
-                o.start(t);
-                o.stop(t + 0.7);
-            }
-        } catch (e) {
-            console.warn('Audio play failed', e);
-        }
-    }
-};
+// AudioManager は ./js/audio/audio-manager.js へ分離（Stage 2）
 
 // ===================================
 // PowerUp クラス
@@ -580,17 +523,20 @@ window.addEventListener('blur', () => {
     player.moveRight = false;
 });
 
-// グローバルな例外捕捉（console.error を出さないように警告レベルで処理）
-window.addEventListener('error', (evt) => {
-    handleGameError(evt.error || evt.message || 'Unknown error');
-    // prevent default logging to console.error
-    evt.preventDefault();
+// Stage 2: エラー処理は ./js/util/errors.js へ分離。
+// ゲームループの停止（ゲーム状態に依存する復旧処理）だけ script.js 側で注入する。
+configureErrors({
+    onError: () => {
+        // 必要ならゲームを止める
+        gameState.isRunning = false;
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+    }
 });
-
-window.addEventListener('unhandledrejection', (evt) => {
-    handleGameError(evt.reason || 'Unhandled rejection');
-    evt.preventDefault();
-});
+// グローバルな例外捕捉（window 'error' / 'unhandledrejection'）を登録
+registerGlobalErrorHandlers();
 
 // ===================================
 // ヘルパー関数
@@ -777,11 +723,6 @@ function loop(timestamp) {
         // ゲーム時間を累積（秒）
         gameState.gameTime += delta;
 
-        // スコアを更新（生存時間 * 10、コンボ倍率を適用）
-        const baseScore = gameState.gameTime * 10;
-        const multiplier = getComboMultiplier(gameState.combo);
-        gameState.score = baseScore * multiplier;
-
         // レベルを更新
         gameState.level = Math.floor(gameState.gameTime / 10) + 1;
 
@@ -789,9 +730,21 @@ function loop(timestamp) {
         updateDifficulty();
 
         // コンボタイムアウトチェック（COMBO_TIMEOUT秒以上コアを取得していない）
+        // 生存スコアの累積より前に判定し、タイムアウト後のフレームは等倍で加算する。
         if (gameState.combo > 0 && gameState.gameTime - gameState.comboLastTime > COMBO_TIMEOUT) {
             gameState.combo = 0;
         }
+
+        // スコアを更新（このフレームで獲得した生存点をコンボ倍率付きで累積する）
+        // 旧実装は survivalScore = gameTime * 10 * multiplier と毎フレーム再計算していたため、
+        // コンボ倍率が 3 倍→1 倍へ戻ると過去の生存時間分まで再計算され、表示スコアが一度減少していた。
+        // 各フレームの獲得点 (delta * 10 * multiplier) を累積することで、倍率はその倍率が
+        // 有効だった時間中の獲得点だけに適用され、スコアはプレイ中に減少しない。
+        // 既存仕様: コンボ倍率は「生存スコアのみ」に適用する（加算スコアには掛けない）。
+        // bonusScore（コア / ボーナス加算）はここで上書きせず累積を維持し、最終スコアを合成する。
+        const multiplier = getComboMultiplier(gameState.combo);
+        gameState.survivalScore += delta * 10 * multiplier;
+        gameState.score = gameState.survivalScore + gameState.bonusScore;
 
         // パワーアップ／シールドの期限チェック
         if (gameState.slowUntil && Date.now() > gameState.slowUntil) {
@@ -879,8 +832,9 @@ function loop(timestamp) {
                 continue;
             }
             if (core.collidesWith(player)) {
-                // コア取得：スコア加算、コンボ増加、パーティクル生成
-                gameState.score += ENERGY_CORE_SCORE;
+                // コア取得：加算スコア（bonusScore）へ加算、コンボ増加、パーティクル生成
+                // 毎フレーム上書きされない bonusScore に積むことで取得点が消えないようにする。
+                gameState.bonusScore += ENERGY_CORE_SCORE;
                 gameState.combo++;
                 if (gameState.combo > gameState.maxCombo) {
                     gameState.maxCombo = gameState.combo;
@@ -913,6 +867,10 @@ function loop(timestamp) {
             p.ttl -= (delta || 0);
             if (p.ttl <= 0) popups.splice(i, 1);
         }
+
+        // 同フレーム中に取得したコア / ボーナス加算を表示へ即時反映する
+        // （bonusScore は累積済みなので合成し直すだけ。倍率の再適用はしない）
+        gameState.score = gameState.survivalScore + gameState.bonusScore;
 
         // 画面を描画とUI更新（1回だけ）
         draw();
@@ -958,7 +916,8 @@ function applyPowerUp(type) {
         gameState.slowUntil = Date.now() + 6000; // 6秒
         popups.push({ x: player.x, y: player.y - 20, text: 'Slow Down', ttl: 1.8 });
     } else if (type === 'bonus') {
-        gameState.score += 50;
+        // 加算スコアは bonusScore に積む（毎フレームの再代入で消えないようにする）
+        gameState.bonusScore += 50;
         popups.push({ x: player.x, y: player.y - 20, text: '+50', ttl: 1.8 });
     }
 }
@@ -1148,7 +1107,10 @@ if (muteBtn) muteBtn.textContent = AudioManager.muted ? 'SOUND: OFF' : 'SOUND: O
 function resetAllState() {
     gameState.isRunning = true;
     gameState.isPaused = false;
+    // スコア関連状態は RETRY 時のみ 0 に戻す（survival / bonus / 最終 すべて）
     gameState.score = 0;
+    gameState.survivalScore = 0;
+    gameState.bonusScore = 0;
     gameState.level = 1;
     gameState.gameTime = 0;
     gameState.startTime = Date.now();
@@ -1182,9 +1144,8 @@ function resetAllState() {
 
     lastLevel = 0;
 
-    // 既存のエラーはクリア
-    lastError = null;
-    removeErrorOverlay();
+    // 既存のエラーはクリア（lastError リセット + オーバーレイ除去）
+    clearError();
     // lastTimestamp をリセットして delta 計算を初期化
     lastTimestamp = null;
     resetLeaderboardSubmission();
@@ -1192,46 +1153,5 @@ function resetAllState() {
     setLeaderboardStatus('');
 }
 
-// エラーを画面表示するオーバーレイを生成
-function showErrorOverlay(message) {
-    removeErrorOverlay();
-    const overlay = document.createElement('div');
-    overlay.id = 'errorOverlay';
-    overlay.style.position = 'fixed';
-    overlay.style.left = '10px';
-    overlay.style.bottom = '10px';
-    overlay.style.padding = '12px';
-    overlay.style.background = 'rgba(255, 0, 0, 0.9)';
-    overlay.style.color = '#fff';
-    overlay.style.fontSize = '12px';
-    overlay.style.zIndex = 9999;
-    overlay.style.borderRadius = '6px';
-    overlay.textContent = 'Error: ' + message;
-    document.body.appendChild(overlay);
-}
-
-function removeErrorOverlay() {
-    const existing = document.getElementById('errorOverlay');
-    if (existing) existing.remove();
-}
-
-// エラー発生時の共通処理（console.error は使わず警告で残す）
-function handleGameError(err) {
-    try {
-        const msg = err && err.stack ? (err.stack.toString()) : String(err);
-        lastError = msg;
-        // 開発者用に警告で残す
-        console.warn('Game error:', msg);
-        // ユーザーにも分かりやすくオーバーレイ表示
-        showErrorOverlay(msg.substring(0, 500));
-    } catch (e) {
-        // 最後の手段でログは残すが console.error を使わない
-        console.warn('Error handling failed', e);
-    }
-    // 必要ならゲームを止める
-    gameState.isRunning = false;
-    if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-    }
-}
+// エラーオーバーレイ表示 / handleGameError は ./js/util/errors.js へ分離（Stage 2）
+// ゲーム停止の復旧処理は configureErrors({ onError }) で注入している。
