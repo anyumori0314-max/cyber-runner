@@ -63,7 +63,34 @@ export const gameState = {
     combo: 0, // 現在のコンボ数
     maxCombo: 0, // 最大コンボ数（GAME OVER時のランク表示用）
     comboLastTime: 0, // 最後にコアを取得した時刻（秒）
-    energyCoreSpawnRate: ENERGY_CORE_SPAWN_RATE
+    energyCoreSpawnRate: ENERGY_CORE_SPAWN_RATE,
+
+    // ====== Phase 2-3: フェーズ / 一時停止 / カウントダウン ======
+    isPaused: false, // 一時停止中か
+    phase: 'playing', // 'countdown' | 'playing'（タイトル/GAMEOVERは画面側で管理）
+    countdown: 0, // 開始カウントダウンの残り秒（>0 の間はゲーム進行を止める）
+
+    // ====== Phase 4: ダッシュ ======
+    dashReadyAt: 0, // この gameTime 以降ダッシュ可能（クールタイム管理）
+    dashInvulnUntil: 0, // この gameTime までダッシュ無敵
+    lastMoveDirection: 1, // 直近の向き（1:右 / -1:左）。無入力ダッシュ方向に使用
+    dashCount: 0, // 今回プレイのダッシュ使用回数（ミッション/実績/称号）
+
+    // ====== Phase 4: 新パワーアップの効果時刻（gameTime 基準・秒） ======
+    magnetUntil: 0, // この gameTime まで MAGNET 有効
+    doubleUntil: 0, // この gameTime まで DOUBLE SCORE 有効
+
+    // ====== Phase 3-5: 実績/称号/ミッション用の今回プレイ統計 ======
+    nearMissCount: 0, // 今回プレイのニアミス回数
+    coreCount: 0, // 今回プレイのコア取得数
+    shieldUsed: false, // 今回プレイでシールドを使ったか（noshield ミッション判定用）
+    shakeTime: 0, // 画面揺れ残り秒（Phase 3 演出）
+    shakeMag: 0, // 画面揺れの強さ(px)
+
+    // ====== Phase 5: ランミッション ======
+    mission: null, // 現在のミッション定義 { id, label, target, type }
+    missionProgress: 0, // 現在の進捗
+    missionDone: false // 報酬付与済みか（1プレイ1回）
 };
 
 // ===================================
@@ -113,6 +140,24 @@ export function resetState() {
     gameState.maxCombo = 0;
     gameState.comboLastTime = 0;
     gameState.energyCoreSpawnRate = ENERGY_CORE_SPAWN_RATE;
+
+    // Phase 2-5 追加状態のリセット（mission は controller が新規割り当てする）
+    gameState.isPaused = false;
+    gameState.phase = 'playing';
+    gameState.countdown = 0;
+    gameState.dashReadyAt = 0;
+    gameState.dashInvulnUntil = 0;
+    gameState.lastMoveDirection = 1;
+    gameState.dashCount = 0;
+    gameState.magnetUntil = 0;
+    gameState.doubleUntil = 0;
+    gameState.nearMissCount = 0;
+    gameState.coreCount = 0;
+    gameState.shieldUsed = false;
+    gameState.shakeTime = 0;
+    gameState.shakeMag = 0;
+    gameState.missionProgress = 0;
+    gameState.missionDone = false;
 
     // 障害物やプレイヤーの状態をリセット（配列は in-place クリア）
     obstacles.length = 0;

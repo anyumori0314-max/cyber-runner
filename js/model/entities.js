@@ -21,7 +21,16 @@ import {
     SPEED_UNIT_TO_PX_PER_SEC,
     PLAYER_SPEED_PX_PER_SEC,
     ENERGY_CORE_WIDTH,
-    ENERGY_CORE_HEIGHT
+    ENERGY_CORE_HEIGHT,
+    LASER_WARNING_TIME,
+    LASER_ACTIVE_TIME,
+    LASER_WIDTH,
+    HOMING_SIZE,
+    HOMING_DRIFT_SPEED,
+    HOMING_FALL_FACTOR,
+    GAPWALL_HEIGHT,
+    GAPWALL_GAP_WIDTH,
+    GAPWALL_FALL_FACTOR
 } from '../config.js';
 
 // 軸並行矩形（AABB）同士の衝突判定（全エンティティ共通）。
@@ -142,6 +151,9 @@ export class Obstacle {
         this.baseSpeed = gameState.baseSpeed;
         this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC; // convert to px/sec
         this.elapsed = 0; // for zigzag timing
+        // Phase 3: ニアミス判定対象（落下点障害物は対象）
+        this.nearMissEligible = true;
+        this.nearMissed = false;
     }
 
     // 障害物を更新
@@ -207,16 +219,29 @@ export class Obstacle {
 // ===================================
 // PowerUp — パワーアップ（shield / slow / bonus）
 // ===================================
+// パワーアップ種別ごとの色とアイコン文字（Phase 4 で追加種を含む）。
+const POWERUP_STYLE = {
+    shield: { color: '#00eaff', icon: 'S' },
+    slow: { color: '#ffaa00', icon: 'T' },
+    bonus: { color: '#ffe066', icon: '+' },
+    magnet: { color: '#00ffaa', icon: 'M' },
+    bomb: { color: '#ff5500', icon: 'B' },
+    double: { color: '#ff66ff', icon: 'x2' },
+    dashcharge: { color: '#66ccff', icon: 'D' }
+};
+
 export class PowerUp {
-    constructor(gameState) {
-        this.types = ['shield', 'slow', 'bonus'];
-        this.type = this.types[Math.floor(Math.random() * this.types.length)];
+    constructor(gameState, type = null) {
+        // type 未指定なら従来の3種から選ぶ（後方互換）。指定時はその種別を使う。
+        const base = ['shield', 'slow', 'bonus'];
+        this.type = type && POWERUP_STYLE[type] ? type : base[Math.floor(Math.random() * base.length)];
         this.x = Math.random() * (CANVAS_WIDTH - 30);
         this.y = -30;
         this.width = 30;
         this.height = 30;
         this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * 0.6;
-        this.color = this.type === 'shield' ? '#00eaff' : this.type === 'slow' ? '#ffaa00' : '#ffe066';
+        this.color = POWERUP_STYLE[this.type].color;
+        this.icon = POWERUP_STYLE[this.type].icon;
     }
     update(delta, gameState) {
         this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * 0.6;
@@ -235,9 +260,9 @@ export class PowerUp {
         ctx.stroke();
         // テキスト
         ctx.fillStyle = '#000';
-        ctx.font = '12px Arial';
+        ctx.font = this.icon.length > 1 ? 'bold 10px Arial' : '12px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(this.type === 'shield' ? 'S' : this.type === 'slow' ? 'T' : '+', this.x + this.width / 2, this.y + this.height / 2 + 4);
+        ctx.fillText(this.icon, this.x + this.width / 2, this.y + this.height / 2 + 4);
     }
     isOutOfBounds() {
         return this.y > CANVAS_HEIGHT;
@@ -335,6 +360,8 @@ export class Particle {
             ctx.fillStyle = '#ffff00';
         } else if (this.type === 'combo') {
             ctx.fillStyle = '#ff00ff';
+        } else if (this.type === 'bomb') {
+            ctx.fillStyle = '#ff8800';
         } else {
             ctx.fillStyle = '#00ffff';
         }
@@ -347,5 +374,164 @@ export class Particle {
     }
     isDead() {
         return this.life <= 0;
+    }
+}
+
+// ===================================
+// WarningLaser — 縦レーザー（Phase 4）。警告表示 → 発生。左右移動で回避する。
+//   obstacles[] に入れて運用（update(delta, gameState[, player]) / collidesWith / isOutOfBounds / draw）。
+// ===================================
+export class WarningLaser {
+    constructor() {
+        this.type = 'laser';
+        this.width = LASER_WIDTH;
+        this.x = Math.random() * (CANVAS_WIDTH - this.width);
+        this.y = 0; // 縦帯は画面全高
+        this.height = CANVAS_HEIGHT;
+        this.elapsed = 0;
+        this.warningTime = LASER_WARNING_TIME;
+        this.activeTime = LASER_ACTIVE_TIME;
+        this.nearMissEligible = false; // 全高レーザーはニアミス対象外
+        this.nearMissed = false;
+    }
+    get isActive() {
+        return this.elapsed >= this.warningTime && this.elapsed < this.warningTime + this.activeTime;
+    }
+    update(delta) {
+        if (!delta) return;
+        this.elapsed += delta;
+    }
+    draw(ctx) {
+        ctx.save();
+        if (this.isActive) {
+            ctx.fillStyle = 'rgba(255, 60, 60, 0.85)';
+            ctx.shadowColor = '#ff3030';
+            ctx.shadowBlur = 24;
+            ctx.fillRect(this.x, 0, this.width, CANVAS_HEIGHT);
+        } else if (this.elapsed < this.warningTime) {
+            // 警告中：点滅する半透明帯＋枠線（回避猶予を示す）
+            const blink = 0.25 + 0.2 * Math.sin(this.elapsed * 20);
+            ctx.fillStyle = `rgba(255, 80, 80, ${blink})`;
+            ctx.fillRect(this.x, 0, this.width, CANVAS_HEIGHT);
+            ctx.strokeStyle = '#ff5050';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 8]);
+            ctx.strokeRect(this.x + 1, 1, this.width - 2, CANVAS_HEIGHT - 2);
+        }
+        ctx.restore();
+    }
+    isOutOfBounds() {
+        return this.elapsed >= this.warningTime + this.activeTime;
+    }
+    collidesWith(player) {
+        if (!this.isActive) return false; // 警告中は当たらない
+        return this.x < player.x + player.width && this.x + this.width > player.x;
+    }
+}
+
+// ===================================
+// HomingObstacle — 追尾障害物（Phase 4）。プレイヤー方向へ緩やかに寄る（完全追尾はしない）。
+// ===================================
+export class HomingObstacle {
+    constructor(gameState) {
+        this.type = 'homing';
+        this.width = HOMING_SIZE;
+        this.height = HOMING_SIZE;
+        this.x = Math.random() * (CANVAS_WIDTH - this.width);
+        this.y = -this.height;
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * HOMING_FALL_FACTOR;
+        this.nearMissEligible = true;
+        this.nearMissed = false;
+    }
+    update(delta, gameState, player) {
+        if (!delta) return;
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * HOMING_FALL_FACTOR;
+        this.y += this.speed * delta;
+        // 水平方向に緩やかに追尾（速度上限つき＝完全追尾にしない）
+        if (player) {
+            const targetX = player.x + player.width / 2 - this.width / 2;
+            const dx = targetX - this.x;
+            const step = HOMING_DRIFT_SPEED * delta;
+            this.x += Math.max(-step, Math.min(step, dx));
+            this.x = Math.max(0, Math.min(CANVAS_WIDTH - this.width, this.x));
+        }
+    }
+    draw(ctx) {
+        const cx = this.x + this.width / 2;
+        const cy = this.y + this.height / 2;
+        ctx.save();
+        // ひし形＋中央の目（通常障害物と明確に区別）
+        ctx.fillStyle = '#ff3377';
+        ctx.shadowColor = '#ff3377';
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        ctx.moveTo(cx, this.y);
+        ctx.lineTo(this.x + this.width, cy);
+        ctx.lineTo(cx, this.y + this.height);
+        ctx.lineTo(this.x, cy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+    isOutOfBounds() {
+        return this.y > CANVAS_HEIGHT;
+    }
+    collidesWith(player) {
+        return intersects(this, player);
+    }
+}
+
+// ===================================
+// GapWall — 隙間壁（Phase 4）。横長の壁に通過可能な隙間。隙間幅はプレイヤーより十分広い。
+// ===================================
+export class GapWall {
+    constructor(gameState) {
+        this.type = 'gapwall';
+        this.x = 0;
+        this.width = CANVAS_WIDTH;
+        this.y = -GAPWALL_HEIGHT;
+        this.height = GAPWALL_HEIGHT;
+        this.gapWidth = GAPWALL_GAP_WIDTH;
+        // 隙間は必ず画面内に収まる位置（=必ず回避可能）
+        this.gapX = Math.random() * (CANVAS_WIDTH - this.gapWidth);
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * GAPWALL_FALL_FACTOR;
+        this.color = '#7755ff';
+        this.nearMissEligible = false; // 全幅の壁はニアミス対象外
+        this.nearMissed = false;
+    }
+    update(delta, gameState) {
+        if (!delta) return;
+        this.speed = gameState.speed * SPEED_UNIT_TO_PX_PER_SEC * GAPWALL_FALL_FACTOR;
+        this.y += this.speed * delta;
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 14;
+        // 隙間の左右の壁を描画
+        ctx.fillRect(0, this.y, this.gapX, this.height);
+        const rightX = this.gapX + this.gapWidth;
+        ctx.fillRect(rightX, this.y, CANVAS_WIDTH - rightX, this.height);
+        // 隙間の縁を強調（通過位置を分かりやすく）
+        ctx.strokeStyle = '#00ffaa';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#00ffaa';
+        ctx.strokeRect(this.gapX, this.y, this.gapWidth, this.height);
+        ctx.restore();
+    }
+    isOutOfBounds() {
+        return this.y > CANVAS_HEIGHT;
+    }
+    collidesWith(player) {
+        const vOverlap = this.y < player.y + player.height && this.y + this.height > player.y;
+        if (!vOverlap) return false;
+        // プレイヤーが隙間に完全に収まっていれば通過（衝突しない）
+        const insideGap = player.x >= this.gapX && player.x + player.width <= this.gapX + this.gapWidth;
+        return !insideGap;
     }
 }

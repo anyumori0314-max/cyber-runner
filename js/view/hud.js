@@ -9,7 +9,8 @@
 // ===================================
 
 import { player, gameState } from '../state.js';
-import { getComboMultiplier } from '../model/scoring.js';
+import { getComboMultiplier, getNextRankInfo, floorScore } from '../model/scoring.js';
+import { formatMission } from '../model/missions.js';
 
 // main.js から注入される DOM 参照。
 let refs = {
@@ -18,7 +19,12 @@ let refs = {
     highScoreTitle: null,
     comboText: null,
     powerupStatus: null,
-    muteBtn: null
+    muteBtn: null,
+    // Phase 3-5 追加 HUD
+    dashStatus: null,
+    nextRank: null,
+    powerupTimers: null,
+    missionStatus: null
 };
 
 export function configureHud(elements) {
@@ -53,6 +59,35 @@ export function updateHud() {
 
     // パワーアップ状態も併せて更新（旧 draw() から HUD へ移動）
     updatePowerupStatus();
+
+    // Phase 4: ダッシュ クールタイム表示
+    if (refs.dashStatus) {
+        const remain = gameState.dashReadyAt - gameState.gameTime;
+        refs.dashStatus.textContent = remain > 0 ? `DASH: ${Math.ceil(remain)}s` : 'DASH: READY';
+    }
+
+    // Phase 3: 次ランクまでの目安
+    if (refs.nextRank) {
+        const info = getNextRankInfo(floorScore(gameState.score));
+        refs.nextRank.textContent = info ? `NEXT RANK ${info.rank}: ${info.remaining}` : 'MAX RANK';
+    }
+
+    // Phase 4: 時限パワーアップの残り時間（MAGNET / DOUBLE SCORE）
+    if (refs.powerupTimers) {
+        const parts = [];
+        const m = gameState.magnetUntil - gameState.gameTime;
+        if (m > 0) parts.push(`MAGNET ${Math.ceil(m)}s`);
+        const d = gameState.doubleUntil - gameState.gameTime;
+        if (d > 0) parts.push(`DOUBLE x2 ${Math.ceil(d)}s`);
+        refs.powerupTimers.textContent = parts.join('  ');
+    }
+
+    // Phase 5: ミッション進捗
+    if (refs.missionStatus) {
+        refs.missionStatus.textContent = gameState.mission
+            ? `MISSION: ${formatMission(gameState.mission, gameState)}${gameState.missionDone ? ' ✓' : ''}`
+            : '';
+    }
 }
 
 // SOUND 状態表示（ミュート切替ボタンの文言）。

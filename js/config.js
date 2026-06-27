@@ -83,3 +83,77 @@ export const RANK_THRESHOLDS = [
 
 // ====== 永続化キー ======
 export const HIGH_SCORE_STORAGE_KEY = 'cyberRunnerHighScore';
+export const OPTIONS_STORAGE_KEY = 'cyberRunnerOptions';
+export const ACHIEVEMENTS_STORAGE_KEY = 'cyberRunnerAchievements';
+export const STATS_STORAGE_KEY = 'cyberRunnerStats';
+
+// ===================================
+// Phase 1〜5: ユーザー向け機能拡張の定数（値はここに集約）
+// ===================================
+
+// ====== Phase 1: タイトルランキング ======
+export const TITLE_LEADERBOARD_LIMIT = 5; // タイトル画面の上位表示件数
+
+// ====== Phase 2: 効果時間（秒・gameTime基準。一時停止で凍結させるため秒で管理） ======
+export const POWERUP_SHIELD_DURATION_SEC = 8;
+export const POWERUP_SLOW_DURATION_SEC = 6;
+
+// ====== Phase 2: オプション既定値 ======
+export const AUDIO_BASE_VOLUME = 0.18; // マスター音量の基準値（従来の master gain）
+export const DEFAULT_OPTIONS = {
+    soundEnabled: true,
+    soundVolume: 0.8, // 0.0〜1.0（AUDIO_BASE_VOLUME に乗算）
+    screenShakeEnabled: true,
+    particlesEnabled: true,
+    showControls: true
+};
+
+// ====== Phase 3: 演出 ======
+export const COUNTDOWN_SECONDS = 3; // 開始カウントダウン（3,2,1,GO!）
+export const COMBO_WARNING_SECONDS = 1.0; // コンボ終了まで残りこの秒数で警告
+export const NEAR_MISS_SCORE = 25; // ニアミス加点
+export const NEAR_MISS_DISTANCE = 30; // ニアミス判定の水平距離しきい値(px)
+export const POPUP_TTL = 1.0; // スコアポップアップの表示秒数
+
+// ====== Phase 4-1: ダッシュ ======
+export const DASH_DISTANCE = 180; // ダッシュ移動距離(px)
+export const DASH_COOLDOWN = 3.0; // クールタイム(秒)
+export const DASH_INVULN_DURATION = 0.35; // ダッシュ無敵時間(秒)
+
+// ====== Phase 4-2: 新障害物（出現開始レベル・パラメータ） ======
+export const LASER_START_LEVEL = 3;
+export const LASER_WARNING_TIME = 1.2; // 警告表示時間(秒)：回避猶予
+export const LASER_ACTIVE_TIME = 0.6; // レーザー発生時間(秒)
+export const LASER_WIDTH = 48; // 縦レーザー帯の横幅(px)（左右移動で回避）
+export const LASER_SPAWN_RATE = 0.006; // フレーム確率(shouldSpawnで補正)
+
+export const HOMING_START_LEVEL = 4;
+export const HOMING_SIZE = 34;
+export const HOMING_DRIFT_SPEED = 70; // プレイヤー方向への水平追尾速度(px/秒・緩やか)
+export const HOMING_FALL_FACTOR = 0.7; // 落下速度係数（基準速度に対する）
+export const HOMING_SPAWN_RATE = 0.006;
+
+export const GAPWALL_START_LEVEL = 5;
+export const GAPWALL_HEIGHT = 28;
+export const GAPWALL_GAP_WIDTH = 130; // 隙間の幅(px)（プレイヤー40pxより十分広い）
+export const GAPWALL_FALL_FACTOR = 0.85;
+export const GAPWALL_SPAWN_RATE = 0.004;
+
+// ====== Phase 4-3: 新パワーアップ ======
+export const POWERUP_MAGNET_DURATION = 6.0; // MAGNET 効果(秒)
+export const MAGNET_PULL_SPEED = 320; // コアを引き寄せる速度(px/秒)
+export const POWERUP_DOUBLE_DURATION = 8.0; // DOUBLE SCORE 効果(秒)
+export const DOUBLE_SCORE_MULTIPLIER = 2; // 効果中の新規獲得スコア倍率
+// パワーアップ出現の重み（合計に対する相対比率。新種は控えめ・DASH CHARGEは希少）
+export const POWERUP_WEIGHTS = {
+    shield: 22,
+    slow: 18,
+    bonus: 18,
+    magnet: 12,
+    bomb: 8,
+    double: 12,
+    dashcharge: 10
+};
+
+// ====== Phase 5: ミッション / 実績 ======
+export const MISSION_REWARD = 500; // ミッション達成報酬（基本）

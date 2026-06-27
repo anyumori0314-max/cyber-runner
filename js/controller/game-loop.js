@@ -1,16 +1,35 @@
 // ===================================
-// controller/game-loop.js — ゲームループとライフサイクル（Stage 5）
+// controller/game-loop.js — ゲームループとライフサイクル（Phase 2-5 統合）
 //
 // 責務: requestAnimationFrame ループ / deltaTime（MAX_DELTA_TIME クランプ）/
-//       update・spawn・衝突・GAME OVER 判定 / startGame・endGame・resetAllState・
-//       RAF 停止。Model を更新し、View を呼び出すオーケストレーション層。
+//       開始カウントダウン / 一時停止 / ダッシュ / update・spawn・衝突 / ニアミス /
+//       マグネット / ミッション進捗・報酬 / GAME OVER 判定・実績解除・称号 /
+//       startGame・endGame・resetAllState・RAF 停止。Model を更新し View を呼ぶ層。
 //
 // 依存方向: state / model / view / services / audio / util を import（上位 = controller）。
 //   View/Model/Services は controller を import しない（一方向の依存・循環なし）。
 // 厳守: RAF は常に1本 / deltaTime clamp / 二重起動防止 / エラー時 RAF 停止 / RETRY 再開。
 // ===================================
 
-import { CANVAS_WIDTH, CANVAS_HEIGHT, MAX_DELTA_TIME } from '../config.js';
+import {
+    CANVAS_WIDTH,
+    CANVAS_HEIGHT,
+    MAX_DELTA_TIME,
+    COUNTDOWN_SECONDS,
+    NEAR_MISS_DISTANCE,
+    POPUP_TTL,
+    DASH_DISTANCE,
+    DASH_COOLDOWN,
+    DASH_INVULN_DURATION,
+    LASER_START_LEVEL,
+    LASER_SPAWN_RATE,
+    HOMING_START_LEVEL,
+    HOMING_SPAWN_RATE,
+    GAPWALL_START_LEVEL,
+    GAPWALL_SPAWN_RATE,
+    POWERUP_WEIGHTS,
+    MAGNET_PULL_SPEED
+} from '../config.js';
 import {
     gameState,
     player,
@@ -23,11 +42,21 @@ import {
     resetState,
     updateHighScore
 } from '../state.js';
-import { Obstacle, PowerUp, EnergyCore, Particle } from '../model/entities.js';
+import {
+    Obstacle,
+    PowerUp,
+    EnergyCore,
+    Particle,
+    WarningLaser,
+    HomingObstacle,
+    GapWall
+} from '../model/entities.js';
 import {
     accumulateSurvivalScore,
     composeScore,
     addCoreScore,
+    addNearMissScore,
+    addMissionReward,
     registerComboHit,
     updateComboTimeout,
     calculateRank,
@@ -35,10 +64,24 @@ import {
 } from '../model/scoring.js';
 import { updateLevel, updateDifficulty, shouldSpawn } from '../model/difficulty.js';
 import { applyPowerUp, updatePowerupExpiry } from '../model/powerups.js';
+import { selectMission, getMissionProgress, isMissionComplete, formatMission } from '../model/missions.js';
+import { recordRunAndUnlock } from '../model/achievements.js';
+import { determineTitle } from '../model/titles.js';
+import { getOptions } from '../model/options.js';
 import { drawScene } from '../view/renderer.js';
 import { updateHud } from '../view/hud.js';
-import { showGameScreen, showGameOverScreen, renderGameOver } from '../view/screens.js';
+import {
+    showGameScreen,
+    showGameOverScreen,
+    showTitleScreen,
+    renderGameOver,
+    showPauseScreen,
+    hidePauseScreen,
+    hideAllOverlays
+} from '../view/screens.js';
+import { showToast, renderAchievements } from '../view/achievements-view.js';
 import { clearPlayerName, updateSendScoreButton, setLeaderboardStatus } from '../view/leaderboard-view.js';
+import { clearKeys } from './input.js';
 import { AudioManager } from '../audio/audio-manager.js';
 import { handleGameError, clearError } from '../util/errors.js';
 import { prepareSubmission, loadLeaderboard, resetLeaderboardSubmission } from '../services/leaderboard.js';
@@ -61,6 +104,15 @@ export function stopLoop() {
     }
 }
 
+// 今回プレイのミッションを新規割り当てする（タイトルプレビュー / RETRY 用）。
+// resetState はミッション定義を消さないため、controller がここで明示的に割り当てる。
+export function prepareMission() {
+    gameState.mission = selectMission();
+    gameState.missionProgress = 0;
+    gameState.missionDone = false;
+    return gameState.mission;
+}
+
 // すべての状態を初期化する（START / RETRY 用）。
 // データ状態は state.resetState() に委譲し、横断的関心（エラー / リーダーボードUI）をここで初期化。
 export function resetAllState() {
@@ -72,8 +124,11 @@ export function resetAllState() {
     setLeaderboardStatus('');
 }
 
-// ゲーム開始（多重起動防止 → AudioContext 初期化 → 状態リセット → 画面遷移 → ループ開始）。
+// ゲーム開始（多重起動防止 → AudioContext 初期化 → 状態リセット → 画面遷移 → カウントダウン → ループ開始）。
 export function startGame() {
+    // 残っているオーバーレイ（ポーズ等）を閉じる
+    hideAllOverlays();
+
     // 既存のループがあれば停止してから再開（多重起動防止）
     if (loopState.rafId) {
         cancelAnimationFrame(loopState.rafId);
@@ -85,6 +140,9 @@ export function startGame() {
 
     // すべての状態を初期化
     resetAllState();
+
+    // ミッションが未割り当てなら新規に選ぶ（タイトルプレビューがあればそれを引き継ぐ）
+    if (!gameState.mission) prepareMission();
 
     // 効果音（スタート）
     AudioManager.play('start');
@@ -101,14 +159,114 @@ export function startGame() {
     // 描画は論理ピクセル単位で行えるようにコンテキストをスケーリング
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    // 開始カウントダウン（この間は gameTime を進めず、操作・spawn も止める）
+    gameState.phase = 'countdown';
+    gameState.countdown = COUNTDOWN_SECONDS;
+    gameState.isPaused = false;
+
     // ゲームループ開始（常に1本の RAF）
     loopState.rafId = requestAnimationFrame(loop);
 }
 
-// ゲーム終了（RAF 停止 → ハイスコア保存 → 結果表示 → 送信準備 → リーダーボード読込 → 画面遷移）。
+// 一時停止（RAF 停止で gameTime と全演出を凍結する）。
+export function pauseGame() {
+    if (!gameState.isRunning || gameState.isPaused) return;
+    gameState.isPaused = true;
+    if (loopState.rafId) {
+        cancelAnimationFrame(loopState.rafId);
+        loopState.rafId = null;
+    }
+    clearKeys(); // 押しっぱなしキーの暴走を防ぐ
+    showPauseScreen();
+}
+
+// 一時停止からの再開（delta をクリーンに再開してジャンプを防ぐ）。
+export function resumeGame() {
+    if (!gameState.isRunning || !gameState.isPaused) return;
+    gameState.isPaused = false;
+    hidePauseScreen();
+    loopState.lastTimestamp = null; // 凍結期間ぶんの delta を破棄
+    loopState.rafId = requestAnimationFrame(loop);
+}
+
+// ESC トグル（入力からのコールバック）。
+export function togglePause() {
+    if (!gameState.isRunning) return;
+    if (gameState.isPaused) resumeGame();
+    else pauseGame();
+}
+
+// タイトルへ戻る（ポーズ中の BACK TO TITLE）。
+export function backToTitle() {
+    stopLoop();
+    gameState.isPaused = false;
+    hideAllOverlays();
+    clearKeys();
+    showTitleScreen();
+}
+
+// ダッシュ（SPACE）。クールタイム外なら直近の向きへ瞬間移動し、短い無敵を付与。
+export function doDash() {
+    if (!gameState.isRunning || gameState.isPaused) return;
+    if (gameState.phase !== 'playing') return; // カウントダウン中は不可
+    const now = gameState.gameTime;
+    if (now < gameState.dashReadyAt) return; // クールタイム中
+
+    const dir = gameState.lastMoveDirection || 1;
+    player.x = Math.max(0, Math.min(CANVAS_WIDTH - player.width, player.x + dir * DASH_DISTANCE));
+    gameState.dashReadyAt = now + DASH_COOLDOWN;
+    gameState.dashInvulnUntil = now + DASH_INVULN_DURATION;
+    gameState.dashCount++;
+    AudioManager.play('pickup');
+
+    if (getOptions().particlesEnabled) {
+        for (let i = 0; i < 4; i++) {
+            particles.push(new Particle(player.x + player.width / 2, player.y + player.height / 2, 'dash'));
+        }
+    }
+}
+
+// パワーアップ種別を重み付き抽選で決める（POWERUP_WEIGHTS 準拠）。
+function pickWeightedPowerUpType() {
+    const entries = Object.entries(POWERUP_WEIGHTS);
+    let total = 0;
+    for (const [, w] of entries) total += w;
+    let r = Math.random() * total;
+    for (const [type, w] of entries) {
+        if ((r -= w) < 0) return type;
+    }
+    return entries[0][0];
+}
+
+// 画面揺れを発生させる（残り時間が長くなる方向にのみ更新）。
+function triggerShake(mag, time) {
+    if (time > gameState.shakeTime) gameState.shakeTime = time;
+    gameState.shakeMag = Math.max(gameState.shakeMag, mag);
+}
+
+// ニアミス判定（対象障害物が当たらずに横をすり抜けたら1回だけ加点）。
+function checkNearMiss(ob) {
+    if (!ob.nearMissEligible || ob.nearMissed) return;
+    const vOverlap = ob.y + ob.height > player.y && ob.y < player.y + player.height;
+    if (!vOverlap) return;
+    let gap = Infinity;
+    if (ob.x >= player.x + player.width) gap = ob.x - (player.x + player.width); // 右側を通過
+    else if (ob.x + ob.width <= player.x) gap = player.x - (ob.x + ob.width); // 左側を通過
+    else return; // 水平方向に重なっている = ニアミスではなく衝突域
+    if (gap >= 0 && gap <= NEAR_MISS_DISTANCE) {
+        ob.nearMissed = true;
+        gameState.nearMissCount++;
+        addNearMissScore(gameState);
+        popups.push({ x: player.x, y: player.y - 30, text: 'NEAR MISS +25', ttl: POPUP_TTL });
+    }
+}
+
+// ゲーム終了（RAF 停止 → ハイスコア保存 → 結果表示 → 実績/称号 → 送信準備 → リーダーボード読込 → 画面遷移）。
 export function endGame() {
     // ループを停止
     stopLoop();
+    gameState.isPaused = false;
+    hideAllOverlays();
 
     // キー入力状態をクリア
     player.moveLeft = false;
@@ -120,15 +278,52 @@ export function endGame() {
     // 効果音（ゲームオーバー）
     AudioManager.play('gameover');
 
-    // ゲームオーバー画面に表示
+    // 最終スコアとランクを確定
     const finalScore = floorScore(gameState.score);
     const rank = calculateRank(finalScore);
+
+    // Phase 5: 称号判定（今回プレイの統計から1つ）
+    const run = {
+        maxCombo: gameState.maxCombo,
+        coreCount: gameState.coreCount,
+        nearMissCount: gameState.nearMissCount,
+        dashCount: gameState.dashCount,
+        survivalTime: gameState.gameTime
+    };
+    const title = determineTitle(run);
+
+    // Phase 5: 累計統計の更新と実績解除（達成済みは重複解除しない）
+    const newly = recordRunAndUnlock({
+        cores: gameState.coreCount,
+        nearMiss: gameState.nearMissCount,
+        maxCombo: gameState.maxCombo,
+        survivalTime: gameState.gameTime,
+        rank: rank.rank,
+        dashCount: gameState.dashCount
+    });
+    renderAchievements(); // 一覧を最新化（次に開いたとき反映）
+
+    // Phase 5: ミッション結果テキスト
+    const missionResult = gameState.mission
+        ? (gameState.missionDone
+            ? `ミッション達成: ${gameState.mission.label} (+500)`
+            : `ミッション未達成: ${formatMission(gameState.mission, gameState)}`)
+        : '';
+
+    // ゲームオーバー画面に表示
     renderGameOver({
         score: finalScore,
         highScore: gameState.highScore,
         rank,
-        maxCombo: gameState.maxCombo
+        maxCombo: gameState.maxCombo,
+        title,
+        missionResult
     });
+
+    // 新規解除した実績をトースト通知
+    for (const def of newly) {
+        showToast('ACHIEVEMENT UNLOCKED', def.name);
+    }
 
     // 送信対象データを確定（GAME OVER と同じ最終スコアを使用）
     prepareSubmission({
@@ -145,10 +340,22 @@ export function endGame() {
     showGameOverScreen();
 }
 
+// 開始カウントダウンの進行（gameTime は進めない）。GO! 表示後に playing へ移行。
+function tickCountdown(delta) {
+    gameState.countdown -= delta;
+    if (gameState.countdown <= -0.6) {
+        gameState.phase = 'playing';
+        gameState.countdown = 0;
+    }
+    drawScene(ctx);
+    updateHud();
+    loopState.rafId = requestAnimationFrame(loop);
+}
+
 // 安定化されたメインループ。
 function loop(timestamp) {
     try {
-        if (!gameState.isRunning) return;
+        if (!gameState.isRunning || gameState.isPaused) return;
 
         // deltaTime を計算（seconds）
         let delta = 0;
@@ -159,8 +366,20 @@ function loop(timestamp) {
         }
         loopState.lastTimestamp = timestamp;
 
+        // 開始カウントダウン中はゲームを進めず、カウントのみ進める
+        if (gameState.phase === 'countdown') {
+            tickCountdown(delta);
+            return;
+        }
+
         // ゲーム時間を累積（秒）
         gameState.gameTime += delta;
+
+        // 画面揺れの減衰
+        if (gameState.shakeTime > 0) {
+            gameState.shakeTime = Math.max(0, gameState.shakeTime - delta);
+            if (gameState.shakeTime === 0) gameState.shakeMag = 0;
+        }
 
         // レベルと難易度を更新
         updateLevel(gameState);
@@ -189,17 +408,30 @@ function loop(timestamp) {
         if (shouldSpawn(gameState.spawnRate, delta)) {
             obstacles.push(new Obstacle(gameState));
         }
+        // Phase 4: レベル別の新障害物（それぞれ専用の出現率）
+        if (gameState.level >= LASER_START_LEVEL && shouldSpawn(LASER_SPAWN_RATE, delta)) {
+            obstacles.push(new WarningLaser());
+        }
+        if (gameState.level >= HOMING_START_LEVEL && shouldSpawn(HOMING_SPAWN_RATE, delta)) {
+            obstacles.push(new HomingObstacle(gameState));
+        }
+        if (gameState.level >= GAPWALL_START_LEVEL && shouldSpawn(GAPWALL_SPAWN_RATE, delta)) {
+            obstacles.push(new GapWall(gameState));
+        }
         if (shouldSpawn(gameState.powerupSpawnRate, delta)) {
-            powerUps.push(new PowerUp(gameState));
+            powerUps.push(new PowerUp(gameState, pickWeightedPowerUpType()));
         }
         if (shouldSpawn(gameState.energyCoreSpawnRate, delta)) {
             energyCores.push(new EnergyCore(gameState));
         }
 
+        const dashInvuln = gameState.gameTime < gameState.dashInvulnUntil;
+
         // 障害物を更新と衝突判定（後方ループで安全に splice）
         for (let i = obstacles.length - 1; i >= 0; i--) {
             const ob = obstacles[i];
-            ob.update(delta, gameState);
+            // HomingObstacle は player を参照（他種は余分な引数を無視）
+            ob.update(delta, gameState, player);
 
             // 画面外に出た障害物を削除
             if (ob.isOutOfBounds()) {
@@ -207,19 +439,28 @@ function loop(timestamp) {
                 continue;
             }
 
+            // ニアミス判定（衝突しなかった対象障害物）
+            checkNearMiss(ob);
+
             // プレイヤーとの衝突判定
             if (ob.collidesWith(player)) {
+                if (dashInvuln) {
+                    // ダッシュ無敵中はすり抜ける（障害物は残す）
+                    continue;
+                }
                 if (player.shield) {
-                    // シールドに守られる
+                    // シールドに守られる（1回消費）
                     player.shield = false;
-                    // 障害物を消す
+                    player.shieldUntil = null;
+                    gameState.shieldUsed = true; // noshield ミッション判定用
                     obstacles.splice(i, 1);
                     popups.push({ x: player.x, y: player.y - 20, text: 'Shield!', ttl: 1.2 });
+                    triggerShake(8, 0.25);
                     AudioManager.play('pickup');
                     continue;
                 }
+                triggerShake(14, 0.4);
                 endGame();
-                AudioManager.play('gameover');
                 return;
             }
         }
@@ -233,31 +474,52 @@ function loop(timestamp) {
                 continue;
             }
             if (pu.collidesWith(player)) {
-                applyPowerUp(pu.type, { gameState, player, popups });
+                applyPowerUp(pu.type, {
+                    gameState,
+                    player,
+                    popups,
+                    obstacles,
+                    particles,
+                    particlesEnabled: getOptions().particlesEnabled
+                });
                 powerUps.splice(i, 1);
                 AudioManager.play('pickup');
             }
         }
 
         // エネルギーコアを更新と衝突判定
+        const magnetActive = gameState.magnetUntil > gameState.gameTime;
         for (let i = energyCores.length - 1; i >= 0; i--) {
             const core = energyCores[i];
+            // Phase 4: マグネット有効中はプレイヤーへ引き寄せる
+            if (magnetActive) {
+                const px = player.x + player.width / 2;
+                const py = player.y + player.height / 2;
+                const cx = core.x + core.width / 2;
+                const cy = core.y + core.height / 2;
+                const dx = px - cx;
+                const dy = py - cy;
+                const dist = Math.hypot(dx, dy) || 1;
+                const step = Math.min(MAGNET_PULL_SPEED * delta, dist);
+                core.x += (dx / dist) * step;
+                core.y += (dy / dist) * step;
+            }
             core.update(delta, gameState);
             if (core.isOutOfBounds()) {
                 energyCores.splice(i, 1);
                 continue;
             }
             if (core.collidesWith(player)) {
-                // コア取得：加算スコア（+100）→ コンボ増加 → パーティクル生成
-                // bonusScore に積むことで毎フレームの再合成でも取得点が消えない。
+                // コア取得：加算スコア（+100）→ コンボ増加 → 統計更新 → パーティクル生成
                 addCoreScore(gameState);
                 registerComboHit(gameState);
-                // パーティクル生成
-                for (let j = 0; j < 5; j++) {
-                    particles.push(new Particle(core.x + core.width / 2, core.y + core.height / 2, 'core'));
+                gameState.coreCount++; // ミッション/実績/称号用
+                if (getOptions().particlesEnabled) {
+                    for (let j = 0; j < 5; j++) {
+                        particles.push(new Particle(core.x + core.width / 2, core.y + core.height / 2, 'core'));
+                    }
+                    particles.push(new Particle(player.x + player.width / 2, player.y - 20, 'combo'));
                 }
-                // コンボ表示パーティクル
-                particles.push(new Particle(player.x + player.width / 2, player.y - 20, 'combo'));
                 energyCores.splice(i, 1);
                 AudioManager.play('pickup');
             }
@@ -282,6 +544,19 @@ function loop(timestamp) {
 
         // 同フレーム中に取得したコア / ボーナス加算を表示へ即時反映（合成のみ）
         composeScore(gameState);
+
+        // Phase 5: ミッション進捗と達成報酬（1プレイ1回）
+        if (gameState.mission) {
+            gameState.missionProgress = getMissionProgress(gameState.mission, gameState);
+            if (!gameState.missionDone && isMissionComplete(gameState.mission, gameState)) {
+                gameState.missionDone = true;
+                addMissionReward(gameState);
+                composeScore(gameState);
+                popups.push({ x: player.x, y: player.y - 40, text: 'MISSION COMPLETE +500', ttl: 1.6 });
+                showToast('MISSION COMPLETE', gameState.mission.label);
+                AudioManager.play('levelUp');
+            }
+        }
 
         // 画面を描画と HUD 更新（1回だけ）
         drawScene(ctx);

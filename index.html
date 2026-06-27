@@ -14,13 +14,24 @@
             <div class="title-content">
                 <h1 class="game-title">避けろ！<span class="accent">サイバーランナー</span></h1>
                 <p class="subtitle">未来都市を駆け抜け、障害物を避け続けろ</p>
-                <p class="controls">操作: ← / → または A / D</p>
+                <p class="controls" id="titleControls">操作: ← / → ・ A / D ｜ SPACE: ダッシュ ｜ ESC: ポーズ</p>
                 <div class="title-buttons">
                     <button id="startBtn" class="btn btn-primary">START</button>
                     <button id="muteBtn" class="btn btn-secondary">SOUND</button>
+                    <button id="titleOptionsBtn" class="btn btn-secondary">OPTIONS</button>
+                    <button id="achievementsBtn" class="btn btn-secondary">ACHIEVEMENTS</button>
                 </div>
+                <p class="mission-preview" id="titleMission"></p>
                 <div class="high-score-display">
                     <p>ハイスコア: <span id="highScoreTitle">0</span></p>
+                </div>
+                <div class="leaderboard-panel title-leaderboard">
+                    <h3>GLOBAL TOP 5</h3>
+                    <ol id="titleLeaderboardList" class="leaderboard-list">
+                        <li class="leaderboard-empty">Loading...</li>
+                    </ol>
+                    <p class="leaderboard-status" id="titleLeaderboardStatus"></p>
+                    <button id="titleReloadBtn" class="btn btn-secondary btn-small">RELOAD</button>
                 </div>
             </div>
         </div>
@@ -37,6 +48,12 @@
                 <div class="level-display">
                     <p>Lv: <span id="currentLevel">1</span></p>
                 </div>
+            </div>
+            <div class="game-hud-secondary">
+                <span id="dashStatus" class="hud-chip">DASH: READY</span>
+                <span id="nextRank" class="hud-chip"></span>
+                <span id="powerupTimers" class="hud-chip"></span>
+                <span id="missionStatus" class="hud-chip"></span>
             </div>
             <canvas id="gameCanvas" width="800" height="600"></canvas>
         </div>
@@ -59,6 +76,8 @@
                     <p class="score-value" id="maxComboResult">0</p>
                 </div>
                 <p class="rank-message" id="rankMessage"></p>
+                <p class="play-title" id="playTitle"></p>
+                <p class="mission-result" id="missionResult"></p>
                 <div class="score-submit">
                     <label class="score-label" for="playerNameInput">PLAYER NAME</label>
                     <div class="score-submit-row">
@@ -76,6 +95,57 @@
                 <button id="retryBtn" class="btn btn-primary">RETRY</button>
             </div>
         </div>
+
+        <!-- 一時停止オーバーレイ（Phase 2） -->
+        <div id="pauseScreen" class="screen overlay-screen">
+            <div class="overlay-content">
+                <h2 class="overlay-title">PAUSED</h2>
+                <button id="resumeBtn" class="btn btn-primary">RESUME</button>
+                <button id="pauseOptionsBtn" class="btn btn-secondary">OPTIONS</button>
+                <button id="pauseRestartBtn" class="btn btn-secondary">RESTART</button>
+                <button id="backToTitleBtn" class="btn btn-secondary">BACK TO TITLE</button>
+            </div>
+        </div>
+
+        <!-- オプションオーバーレイ（Phase 2） -->
+        <div id="optionsScreen" class="screen overlay-screen">
+            <div class="overlay-content options-content">
+                <h2 class="overlay-title">OPTIONS</h2>
+                <label class="option-row">
+                    <span>SOUND</span>
+                    <input type="checkbox" id="optSoundEnabled">
+                </label>
+                <label class="option-row">
+                    <span>効果音音量</span>
+                    <input type="range" id="optSoundVolume" min="0" max="1" step="0.05">
+                </label>
+                <label class="option-row">
+                    <span>画面揺れ</span>
+                    <input type="checkbox" id="optScreenShake">
+                </label>
+                <label class="option-row">
+                    <span>パーティクル</span>
+                    <input type="checkbox" id="optParticles">
+                </label>
+                <label class="option-row">
+                    <span>操作説明を表示</span>
+                    <input type="checkbox" id="optShowControls">
+                </label>
+                <button id="optionsBackBtn" class="btn btn-primary">BACK</button>
+            </div>
+        </div>
+
+        <!-- 実績一覧オーバーレイ（Phase 5） -->
+        <div id="achievementsScreen" class="screen overlay-screen">
+            <div class="overlay-content achievements-content">
+                <h2 class="overlay-title">ACHIEVEMENTS</h2>
+                <ul id="achievementsList" class="achievements-list"></ul>
+                <button id="achievementsBackBtn" class="btn btn-primary">BACK</button>
+            </div>
+        </div>
+
+        <!-- 実績解除トースト通知（Phase 5） -->
+        <div id="toastContainer" class="toast-container"></div>
     </div>
 
     <script type="module" src="./js/main.js"></script>

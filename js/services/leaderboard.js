@@ -12,6 +12,7 @@ import {
     SUPABASE_ANON_KEY,
     LEADERBOARD_TABLE,
     LEADERBOARD_LIMIT,
+    TITLE_LEADERBOARD_LIMIT,
     PLAYER_NAME_MAX_LENGTH,
     DEFAULT_PLAYER_NAME,
     MAX_SCORE,
@@ -34,8 +35,16 @@ let view = {
     renderUnavailable: () => {},
     setStatus: () => {},
     updateButton: () => {},
-    getRawName: () => ''
+    getRawName: () => '',
+    // Phase 1: タイトル画面 TOP5 用のコールバック
+    renderTitle: () => {},
+    renderTitleUnavailable: () => {},
+    setTitleStatus: () => {}
 };
+
+// 同時に複数の GET を乱発しないためのフラグ（Phase 1: 二重取得防止）
+let loadInFlight = false;
+let titleLoadInFlight = false;
 
 export function configureLeaderboard(callbacks) {
     view = { ...view, ...callbacks };
@@ -110,8 +119,9 @@ async function insertLeaderboardScore() {
 }
 
 // 上位ランキング取得。
-async function fetchLeaderboardScores() {
-    const query = `select=player_name,score,max_combo,rank&order=score.desc,max_combo.desc,created_at.asc&limit=${LEADERBOARD_LIMIT}`;
+async function fetchLeaderboardScores(limit = LEADERBOARD_LIMIT) {
+    // 並び順は従来どおり（score desc, max_combo desc, created_at asc）。limit のみ可変。
+    const query = `select=player_name,score,max_combo,rank&order=score.desc,max_combo.desc,created_at.asc&limit=${limit}`;
     const response = await fetch(`${SUPABASE_URL}/rest/v1/${LEADERBOARD_TABLE}?${query}`, {
         method: 'GET',
         headers: getSupabaseHeaders(),
@@ -125,8 +135,11 @@ async function fetchLeaderboardScores() {
 
 // ランキング読み込み（取得 → View 描画）。失敗してもゲームは継続できる。
 export async function loadLeaderboard() {
+    // 二重取得防止：取得中なら何もしない
+    if (loadInFlight) return;
+    loadInFlight = true;
     try {
-        const scores = await fetchLeaderboardScores();
+        const scores = await fetchLeaderboardScores(LEADERBOARD_LIMIT);
         view.render(scores);
         if (!leaderboardState.hasSubmitted && !leaderboardState.isSubmitting) {
             view.setStatus('');
@@ -135,6 +148,27 @@ export async function loadLeaderboard() {
         console.warn('Leaderboard load failed:', err);
         view.renderUnavailable();
         view.setStatus('Leaderboard connection failed. You can still play.', true);
+    } finally {
+        loadInFlight = false;
+    }
+}
+
+// Phase 1: タイトル画面の GLOBAL TOP 5 を取得して描画する。
+// 取得失敗してもゲーム開始は妨げない（ステータス表示のみ）。二重取得は防止。
+export async function loadTitleLeaderboard() {
+    if (titleLoadInFlight) return;
+    titleLoadInFlight = true;
+    view.setTitleStatus('Loading...');
+    try {
+        const scores = await fetchLeaderboardScores(TITLE_LEADERBOARD_LIMIT);
+        view.renderTitle(scores);
+        view.setTitleStatus('');
+    } catch (err) {
+        console.warn('Title leaderboard load failed:', err);
+        view.renderTitleUnavailable();
+        view.setTitleStatus('Leaderboard unavailable. You can still play.', true);
+    } finally {
+        titleLoadInFlight = false;
     }
 }
 
