@@ -380,6 +380,145 @@ body {
     color: #bfefff;
 }
 
+/* ===== Phase 1: タイトルランキング ===== */
+.title-leaderboard {
+    margin: 16px auto 0;
+}
+.mission-preview {
+    margin-top: 14px;
+    color: #ffc84a;
+    text-shadow: 0 0 8px #ffaa00;
+    font-size: 0.95rem;
+    min-height: 18px;
+}
+
+/* ===== Phase 2-5: ゲーム内 HUD（2段目） ===== */
+.game-hud-secondary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    width: 800px;
+    max-width: 90vw;
+    margin: 0 auto 10px;
+    justify-content: flex-start;
+    min-height: 20px;
+}
+.hud-chip {
+    font-size: 0.85rem;
+    color: #9fefff;
+    text-shadow: 0 0 6px rgba(0, 224, 255, 0.6);
+    white-space: nowrap;
+}
+#dashStatus { color: #8affc1; }
+#powerupTimers { color: #ffd24a; }
+#missionStatus { color: #c9a3ff; }
+
+/* ===== Phase 2/5: オーバーレイ画面（ポーズ・オプション・実績） ===== */
+.overlay-screen {
+    background: rgba(4, 6, 20, 0.82);
+    z-index: 50;
+    backdrop-filter: blur(2px);
+}
+.overlay-content {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 24px 28px;
+    border: 1px solid rgba(0, 255, 255, 0.4);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow: 0 0 24px rgba(0, 255, 200, 0.25);
+    max-height: 90vh;
+    overflow-y: auto;
+}
+.overlay-title {
+    font-size: 2.4rem;
+    color: #00e0ff;
+    text-shadow: 0 0 18px #00e0ff;
+    letter-spacing: 4px;
+    margin-bottom: 14px;
+}
+.overlay-content .btn {
+    margin: 6px 0;
+    min-width: 230px;
+}
+
+/* オプション行 */
+.options-content { width: min(420px, 92vw); }
+.option-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    gap: 16px;
+    padding: 10px 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: #cfefff;
+    font-size: 1rem;
+}
+.option-row input[type="range"] { width: 160px; }
+.option-row input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
+
+/* 実績一覧 */
+.achievements-content { width: min(460px, 92vw); }
+.achievements-list { list-style: none; width: 100%; text-align: left; }
+.achievements-list li {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.achievements-list li .ach-name { font-weight: bold; }
+.achievements-list li.locked { opacity: 0.45; }
+.achievements-list li.unlocked .ach-name { color: #ffe066; text-shadow: 0 0 8px #ffaa00; }
+.achievements-list li .ach-desc { display: block; font-size: 0.8rem; color: #9fbfd6; }
+
+/* GAME OVER 称号・ミッション結果 */
+.play-title {
+    font-size: 1.5rem;
+    color: #00ffcc;
+    text-shadow: 0 0 12px #00ffcc;
+    margin: 12px 0 4px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+.mission-result {
+    font-size: 1rem;
+    color: #ffc84a;
+    min-height: 18px;
+    margin-bottom: 6px;
+}
+
+/* 実績トースト */
+.toast-container {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+.toast {
+    background: rgba(0, 0, 0, 0.85);
+    border: 1px solid #ffe066;
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: #ffe066;
+    text-shadow: 0 0 8px #ffaa00;
+    box-shadow: 0 0 16px rgba(255, 200, 0, 0.4);
+    font-size: 0.9rem;
+    animation: toast-in 0.3s ease-out;
+    max-width: 280px;
+}
+.toast .toast-title { font-weight: bold; display: block; }
+.toast .toast-sub { font-size: 0.78rem; color: #cfefff; }
+@keyframes toast-in {
+    from { transform: translateX(30px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
 /* レスポンシブ対応 */
 @media (max-width: 900px) {
     .game-title {

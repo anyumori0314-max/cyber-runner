@@ -1,0 +1,11 @@
+{
+  "name": "cyber-runner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cyber Runner — browser game (Phase 1-5). No build step; loaded directly as ES modules.",
+  "scripts": {
+    "test": "node scripts/verify.mjs",
+    "verify": "node scripts/verify.mjs"
+  }
+}

@@ -1,0 +1,23 @@
+# Normalize line endings to LF for text sources (fixes CRLF warnings on Windows).
+# This does not touch existing working-tree files until they are re-staged.
+* text=auto
+
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+
+# Binary assets (kept byte-exact; never line-ending converted).
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.mp3   binary
+*.wav   binary
+*.ogg   binary
+*.woff  binary
+*.woff2 binary

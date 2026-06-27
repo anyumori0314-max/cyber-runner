@@ -7,16 +7,23 @@
 // ===================================
 
 // AudioManager: Web Audio で簡易的な効果音を生成
+import { AUDIO_BASE_VOLUME } from '../config.js';
+
 export const AudioManager = {
     ctx: null,
     master: null,
     muted: false,
+    volume: 1, // 0.0〜1.0（オプションの soundVolume。AUDIO_BASE_VOLUME に乗算）
+    // 実効マスター音量（ミュート時は 0）。
+    _gain() {
+        return this.muted ? 0 : AUDIO_BASE_VOLUME * this.volume;
+    },
     init() {
         if (this.ctx) return;
         try {
             this.ctx = new (window.AudioContext || window.webkitAudioContext)();
             this.master = this.ctx.createGain();
-            this.master.gain.value = this.muted ? 0 : 0.18;
+            this.master.gain.value = this._gain();
             this.master.connect(this.ctx.destination);
         } catch (e) {
             console.warn('Audio init failed', e);
@@ -24,7 +31,19 @@ export const AudioManager = {
     },
     toggleMute() {
         this.muted = !this.muted;
-        if (this.master) this.master.gain.value = this.muted ? 0 : 0.18;
+        if (this.master) this.master.gain.value = this._gain();
+        return this.muted;
+    },
+    // オプション連動：サウンド ON/OFF を設定する。
+    setMuted(muted) {
+        this.muted = Boolean(muted);
+        if (this.master) this.master.gain.value = this._gain();
+    },
+    // オプション連動：音量(0〜1)を設定する。
+    setVolume(volume) {
+        const v = Number(volume);
+        this.volume = Number.isFinite(v) ? Math.min(Math.max(v, 0), 1) : 1;
+        if (this.master) this.master.gain.value = this._gain();
     },
     play(name) {
         if (!this.ctx) return;

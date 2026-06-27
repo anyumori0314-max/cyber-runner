@@ -18,22 +18,25 @@ let refs = {
     leaderboardList: null,
     leaderboardStatus: null,
     sendScoreBtn: null,
-    playerNameInput: null
+    playerNameInput: null,
+    // Phase 1: タイトル画面 TOP5
+    titleLeaderboardList: null,
+    titleLeaderboardStatus: null
 };
 
 export function configureLeaderboardView(elements) {
     refs = { ...refs, ...elements };
 }
 
-// GLOBAL TOP 10 を描画する（名前は textContent で安全に表示）。
-export function renderLeaderboard(scores) {
-    if (!refs.leaderboardList) return;
-    refs.leaderboardList.innerHTML = '';
+// スコア一覧を <li> として描画する共通ヘルパー（名前は textContent で安全に表示・省略表示はCSS）。
+function renderScoreList(listEl, scores) {
+    if (!listEl) return;
+    listEl.innerHTML = '';
     if (!scores || scores.length === 0) {
         const emptyItem = document.createElement('li');
         emptyItem.className = 'leaderboard-empty';
         emptyItem.textContent = 'No scores yet';
-        refs.leaderboardList.appendChild(emptyItem);
+        listEl.appendChild(emptyItem);
         return;
     }
     scores.forEach((entry) => {
@@ -46,15 +49,25 @@ export function renderLeaderboard(scores) {
         score.textContent = `${Number(entry.score || 0)} / C${Number(entry.max_combo || 0)}`;
         item.appendChild(name);
         item.appendChild(score);
-        refs.leaderboardList.appendChild(item);
+        listEl.appendChild(item);
     });
 }
 
-// 取得失敗時の表示（静的文言のみ。ユーザー入力は含めない）。
-export function renderUnavailable() {
-    if (refs.leaderboardList) {
-        refs.leaderboardList.innerHTML = '<li class="leaderboard-empty">Leaderboard unavailable</li>';
+function renderUnavailableList(listEl) {
+    if (listEl) {
+        // 静的文言のみ（ユーザー入力を含めない）
+        listEl.innerHTML = '<li class="leaderboard-empty">Leaderboard unavailable</li>';
     }
+}
+
+// GLOBAL TOP 10 を描画する（GAME OVER 画面）。
+export function renderLeaderboard(scores) {
+    renderScoreList(refs.leaderboardList, scores);
+}
+
+// 取得失敗時の表示（GAME OVER 画面）。
+export function renderUnavailable() {
+    renderUnavailableList(refs.leaderboardList);
 }
 
 // ランキング状態テキスト（成功・失敗・送信中）の表示。
@@ -62,6 +75,21 @@ export function setLeaderboardStatus(message, isError = false) {
     if (!refs.leaderboardStatus) return;
     refs.leaderboardStatus.textContent = message || '';
     refs.leaderboardStatus.classList.toggle('error', Boolean(isError));
+}
+
+// Phase 1: タイトル画面 GLOBAL TOP 5 の描画 / 失敗表示 / 状態表示。
+export function renderTitleLeaderboard(scores) {
+    renderScoreList(refs.titleLeaderboardList, scores);
+}
+
+export function renderTitleUnavailable() {
+    renderUnavailableList(refs.titleLeaderboardList);
+}
+
+export function setTitleLeaderboardStatus(message, isError = false) {
+    if (!refs.titleLeaderboardStatus) return;
+    refs.titleLeaderboardStatus.textContent = message || '';
+    refs.titleLeaderboardStatus.classList.toggle('error', Boolean(isError));
 }
 
 // SEND SCORE ボタンの状態（送信中 disabled / 送信済み SENT / 通常）。
