@@ -40,10 +40,21 @@ body {
 /* タイトル画面 */
 #titleScreen {
     background: linear-gradient(135deg, #0a0e27 0%, #1a1a3e 50%, #2a0845 100%);
+    /* 狭幅/低高さでタイトル内容がコンテナより高くなっても、START/SOUND が上端外に
+       はみ出して到達不能にならないようにする。あふれた時は上端揃え＋縦スクロールにし、
+       収まる時は .title-content の margin:auto で従来どおり中央寄せを保つ。 */
+    align-items: flex-start;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 24px 16px;
 }
 
 .title-content {
     text-align: center;
+    /* 余白があれば上下 auto で中央寄せ（デスクトップ維持）、あふれると 0 に潰れ上端から
+       スクロール可能になる（= 上端のボタンが常に到達可能）。 */
+    margin-top: auto;
+    margin-bottom: auto;
 }
 
 .game-title {
@@ -88,6 +99,7 @@ body {
 
 .title-buttons {
     display:flex;
+    flex-wrap:wrap;
     gap:12px;
     justify-content:center;
     align-items:center;
@@ -554,4 +566,294 @@ body {
     .game-header {
         width: 90vw;
     }
+}
+
+/* ===================================
+   Phase 6: ランキングフィルタ / FINISH 見出し
+   =================================== */
+.game-over-mode {
+    margin: 2px 0 8px;
+    font-size: 0.85rem;
+    letter-spacing: 2px;
+    color: #00eaff;
+    text-shadow: 0 0 8px rgba(0, 234, 255, 0.6);
+}
+.leaderboard-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.lb-periods {
+    display: flex;
+    gap: 4px;
+}
+.lb-period {
+    opacity: 0.55;
+    padding: 4px 8px;
+}
+.lb-period.active {
+    opacity: 1;
+    border-color: #00ff88;
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.5);
+}
+.lb-mode-filter {
+    background: rgba(0, 0, 0, 0.5);
+    color: #e8f6ff;
+    border: 1px solid rgba(0, 234, 255, 0.4);
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-family: inherit;
+}
+.leaderboard-myrank {
+    margin: 0 0 6px;
+    font-size: 0.85rem;
+    color: #ffe066;
+    min-height: 1em;
+}
+
+/* ===================================
+   Phase 7: モード選択 / Training パネル
+   =================================== */
+.mode-select {
+    margin: 14px auto 6px;
+    max-width: 460px;
+}
+.mode-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+}
+.mode-btn {
+    opacity: 0.55;
+}
+.mode-btn.active {
+    opacity: 1;
+    border-color: #ff44cc;
+    box-shadow: 0 0 10px rgba(255, 68, 204, 0.6);
+}
+.mode-desc {
+    margin: 8px 0 0;
+    font-size: 0.82rem;
+    color: #b8c6d8;
+    min-height: 1.2em;
+}
+.training-settings {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid rgba(0, 234, 255, 0.3);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.35);
+}
+.training-settings select {
+    background: rgba(0, 0, 0, 0.5);
+    color: #e8f6ff;
+    border: 1px solid rgba(0, 234, 255, 0.4);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-family: inherit;
+}
+.training-panel {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px dashed rgba(0, 255, 136, 0.4);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.35);
+}
+.training-panel-label {
+    color: #00ff88;
+    font-size: 0.78rem;
+    letter-spacing: 1px;
+}
+.tr-pu {
+    padding: 3px 7px;
+    font-size: 0.72rem;
+}
+
+/* ===================================
+   Phase 8: プロフィール / 外観カスタマイズ
+   =================================== */
+.profile-level {
+    font-size: 1.6rem;
+    font-weight: bold;
+    color: #00ff88;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.6);
+}
+.xp-bar {
+    width: 100%;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 8px 0 4px;
+}
+.xp-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #00ff88, #00eaff);
+    transition: width 0.3s ease;
+}
+.xp-text {
+    font-size: 0.78rem;
+    color: #b8c6d8;
+    margin: 0 0 10px;
+}
+.stat-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 10px;
+    text-align: left;
+}
+.stat-list li {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.85rem;
+}
+.stat-key { color: #b8c6d8; }
+.stat-val { color: #e8f6ff; font-weight: bold; }
+.cosmetics-container { text-align: left; }
+.cosmetic-section { margin-bottom: 12px; }
+.cosmetic-section h3 {
+    font-size: 0.9rem;
+    color: #00eaff;
+    margin: 6px 0;
+}
+.cosmetic-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.cosmetic-item.selected {
+    border-color: #00ff88;
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+}
+.cosmetic-item.locked {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.profile-content, .cosmetics-content, .challenges-content {
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+/* ===================================
+   Phase 9: チャレンジ
+   =================================== */
+.challenges-container { text-align: left; }
+.challenge-section { margin-bottom: 14px; }
+.challenge-section h3 {
+    font-size: 0.95rem;
+    color: #ff44cc;
+    margin: 6px 0;
+}
+.challenge-list { list-style: none; padding: 0; margin: 0; }
+.challenge-item {
+    padding: 8px;
+    margin-bottom: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+}
+.challenge-item.completed {
+    border-color: #00ff88;
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.4);
+}
+.challenge-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+}
+.challenge-label { color: #e8f6ff; }
+.challenge-reward { color: #ffe066; font-weight: bold; }
+.challenge-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.challenge-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #ff44cc, #00eaff);
+}
+.challenge-progress {
+    font-size: 0.72rem;
+    color: #b8c6d8;
+}
+.challenges-source {
+    font-size: 0.72rem;
+    color: #b8c6d8;
+    margin-top: 8px;
+}
+
+/* ===================================
+   Phase 10: ゴースト / リプレイ / 共有
+   =================================== */
+.ghost-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: #9fd8ff;
+}
+.result-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin: 10px 0;
+}
+.share-area {
+    margin: 10px auto;
+    max-width: 620px;
+}
+.share-canvas {
+    width: 100%;
+    max-width: 600px;
+    border: 1px solid rgba(0, 255, 136, 0.4);
+    border-radius: 8px;
+}
+.share-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 8px;
+}
+.share-status {
+    font-size: 0.78rem;
+    color: #9fd8ff;
+    min-height: 1em;
+}
+.replay-content { text-align: center; }
+.replay-canvas {
+    width: 320px;
+    height: 240px;
+    max-width: 90vw;
+    border: 1px solid rgba(0, 234, 255, 0.4);
+    border-radius: 8px;
+    background: #05070f;
+}
+.replay-status {
+    font-size: 0.8rem;
+    color: #b8c6d8;
+    min-height: 1.2em;
+    margin: 8px 0;
+}
+.replay-controls {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 10px;
 }

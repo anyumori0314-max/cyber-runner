@@ -27,7 +27,6 @@ import {
     HOMING_SPAWN_RATE,
     GAPWALL_START_LEVEL,
     GAPWALL_SPAWN_RATE,
-    POWERUP_WEIGHTS,
     MAGNET_PULL_SPEED
 } from '../config.js';
 import {
@@ -68,7 +67,12 @@ import { selectMission, getMissionProgress, isMissionComplete, formatMission } f
 import { recordRunAndUnlock } from '../model/achievements.js';
 import { determineTitle } from '../model/titles.js';
 import { getOptions } from '../model/options.js';
+import { applyModeToState, getModePowerupWeights } from '../model/game-modes.js';
+import { getActive as getActiveCosmetics } from '../model/cosmetics.js';
+import { getLevel } from '../model/progression.js';
+import { startRecording, sampleGhost, prepareGhostForMode, clearActiveGhost } from '../model/replay.js';
 import { drawScene } from '../view/renderer.js';
+import { setShareData } from '../view/share-view.js';
 import { updateHud } from '../view/hud.js';
 import {
     showGameScreen,
@@ -80,11 +84,13 @@ import {
     hideAllOverlays
 } from '../view/screens.js';
 import { showToast, renderAchievements } from '../view/achievements-view.js';
-import { clearPlayerName, updateSendScoreButton, setLeaderboardStatus } from '../view/leaderboard-view.js';
+import { setTrainingPanelVisible } from '../view/mode-select-view.js';
+import { clearPlayerName, updateSendScoreButton, setLeaderboardStatus, setScoreSubmitVisible } from '../view/leaderboard-view.js';
 import { clearKeys } from './input.js';
 import { AudioManager } from '../audio/audio-manager.js';
 import { handleGameError, clearError } from '../util/errors.js';
 import { prepareSubmission, loadLeaderboard, resetLeaderboardSubmission } from '../services/leaderboard.js';
+import { startRun, getCurrentRunSync } from '../services/run-service.js';
 
 // main.js から注入される Canvas / 2D コンテキスト。
 let canvas = null;
@@ -141,14 +147,26 @@ export function startGame() {
     // すべての状態を初期化
     resetAllState();
 
+    // Phase 7: 選択中モード（+ Training 設定）を反映（resetAllState の既定値を上書き）。
+    applyModeToState(gameState);
+
     // ミッションが未割り当てなら新規に選ぶ（タイトルプレビューがあればそれを引き継ぐ）
     if (!gameState.mission) prepareMission();
+
+    // Phase 6: サーバー権威 run を開始（未配備時はローカルフォールバックで継続）。
+    startRun(gameState.mode);
+
+    // Phase 10: ゴースト記録を開始し、当該モードのベストゴーストを表示用に読み込む。
+    startRecording(gameState.mode);
+    prepareGhostForMode(gameState.mode); // async・失敗してもゲームは継続
 
     // 効果音（スタート）
     AudioManager.play('start');
 
     // 画面遷移
     showGameScreen();
+    // Phase 7: Training のときだけパワーアップ確認パネルを表示。
+    setTrainingPanelVisible(gameState.mode === 'training');
 
     // キャンバスのサイズを明示的に設定（HiDPI 対応）
     const dpr = window.devicePixelRatio || 1;
@@ -201,6 +219,7 @@ export function backToTitle() {
     stopLoop();
     gameState.isPaused = false;
     hideAllOverlays();
+    setTrainingPanelVisible(false);
     clearKeys();
     showTitleScreen();
 }
@@ -226,9 +245,9 @@ export function doDash() {
     }
 }
 
-// パワーアップ種別を重み付き抽選で決める（POWERUP_WEIGHTS 準拠）。
+// パワーアップ種別を重み付き抽選で決める（Phase 7: モード別の重み）。
 function pickWeightedPowerUpType() {
-    const entries = Object.entries(POWERUP_WEIGHTS);
+    const entries = Object.entries(getModePowerupWeights(gameState.mode));
     let total = 0;
     for (const [, w] of entries) total += w;
     let r = Math.random() * total;
@@ -236,6 +255,12 @@ function pickWeightedPowerUpType() {
         if ((r -= w) < 0) return type;
     }
     return entries[0][0];
+}
+
+// Phase 7: Training のパワーアップ確認（指定種別を1つ降らせる。Training・実行中のみ）。
+export function spawnTrainingPowerup(type) {
+    if (gameState.mode !== 'training' || !gameState.isRunning) return;
+    powerUps.push(new PowerUp(gameState, type));
 }
 
 // 画面揺れを発生させる（残り時間が長くなる方向にのみ更新）。
@@ -262,18 +287,23 @@ function checkNearMiss(ob) {
 }
 
 // ゲーム終了（RAF 停止 → ハイスコア保存 → 結果表示 → 実績/称号 → 送信準備 → リーダーボード読込 → 画面遷移）。
-export function endGame() {
+export function endGame(opts = {}) {
+    const finished = opts.finished === true; // タイムアタックの FINISH（時間切れ）
+    const isTraining = gameState.mode === 'training';
+
     // ループを停止
     stopLoop();
     gameState.isPaused = false;
     hideAllOverlays();
+    setTrainingPanelVisible(false); // Training パネルを閉じる
+    clearActiveGhost(); // 表示用ゴーストを解除
 
     // キー入力状態をクリア
     player.moveLeft = false;
     player.moveRight = false;
 
-    // ハイスコア更新（数値比較 + localStorage 保存）
-    updateHighScore(gameState.score);
+    // ハイスコア更新（Training は累計/記録へ影響させない）
+    if (!isTraining) updateHighScore(gameState.score);
 
     // 効果音（ゲームオーバー）
     AudioManager.play('gameover');
@@ -292,8 +322,18 @@ export function endGame() {
     };
     const title = determineTitle(run);
 
-    // Phase 5: 累計統計の更新と実績解除（達成済みは重複解除しない）
-    const newly = recordRunAndUnlock({
+    // Phase 10: 結果カード用データを共有ビューへ渡す（全モード共通・個人情報は含めない）。
+    setShareData({
+        score: finalScore,
+        rank: rank.rank,
+        maxCombo: gameState.maxCombo,
+        mode: gameState.mode,
+        title,
+        level: getLevel()
+    });
+
+    // Phase 5/7: 累計統計の更新と実績解除（Training では行わない＝累計に影響させない）。
+    const newly = isTraining ? [] : recordRunAndUnlock({
         cores: gameState.coreCount,
         nearMiss: gameState.nearMissCount,
         maxCombo: gameState.maxCombo,
@@ -310,14 +350,16 @@ export function endGame() {
             : `ミッション未達成: ${formatMission(gameState.mission, gameState)}`)
         : '';
 
-    // ゲームオーバー画面に表示
+    // ゲームオーバー画面に表示（FINISH/GAME OVER の見出しは finished で切替）
     renderGameOver({
         score: finalScore,
         highScore: gameState.highScore,
         rank,
         maxCombo: gameState.maxCombo,
         title,
-        missionResult
+        missionResult,
+        finished,
+        mode: gameState.mode
     });
 
     // 新規解除した実績をトースト通知
@@ -325,19 +367,73 @@ export function endGame() {
         showToast('ACHIEVEMENT UNLOCKED', def.name);
     }
 
-    // 送信対象データを確定（GAME OVER と同じ最終スコアを使用）
-    prepareSubmission({
-        score: finalScore,
-        maxCombo: gameState.maxCombo,
-        rank: rank.rank
-    });
-    clearPlayerName();
-    updateSendScoreButton();
-    setLeaderboardStatus('');
-    loadLeaderboard();
+    // Phase 8/9/10: 成長（XP）/チャレンジ進捗/ゴースト保存の反映（Training では行わない）。
+    if (!isTraining) {
+        onRunComplete({
+            mode: gameState.mode,
+            score: finalScore,
+            rank: rank.rank,
+            title,
+            survivalTime: gameState.gameTime,
+            coreCount: gameState.coreCount,
+            nearMissCount: gameState.nearMissCount,
+            maxCombo: gameState.maxCombo,
+            dashCount: gameState.dashCount,
+            shieldUsed: gameState.shieldUsed === true,
+            reachedLevel: gameState.level,
+            missionCompleted: gameState.missionDone === true,
+            newlyAchievements: newly.length,
+            finished
+        });
+    }
+
+    // Phase 6: 送信対象データを確定（mode/duration/metrics/runId を含む）。
+    if (!isTraining) {
+        const durationMs = Math.max(0, Date.now() - (gameState.runStartedAtMs || Date.now()));
+        const run = getCurrentRunSync();
+        prepareSubmission({
+            score: finalScore,
+            maxCombo: gameState.maxCombo,
+            rank: rank.rank,
+            mode: gameState.mode,
+            durationMs,
+            runId: run && run.run_id ? run.run_id : null,
+            metrics: {
+                core_count: gameState.coreCount,
+                near_miss_count: gameState.nearMissCount,
+                dash_count: gameState.dashCount,
+                mission_completed: gameState.missionDone === true,
+                reached_level: gameState.level
+            }
+        });
+        clearPlayerName();
+        updateSendScoreButton();
+        setLeaderboardStatus('');
+        loadLeaderboard();
+    } else {
+        // Training: ランキング対象外（送信 UI は view が抑止）。
+        prepareSubmission({ score: finalScore, maxCombo: gameState.maxCombo, rank: rank.rank, mode: 'training' });
+        updateSendScoreButton();
+    }
+    // Training は送信セクション自体を隠す（送信ボタンを表示しない）。
+    setScoreSubmitVisible(!isTraining);
 
     // 画面遷移
     showGameOverScreen();
+}
+
+// Phase 8/9 のフック（main.js から注入）。XP/チャレンジ/ゴースト保存を controller から呼ぶ。
+let runCompleteHandler = () => {};
+export function configureRunCompletion(fn) {
+    if (typeof fn === 'function') runCompleteHandler = fn;
+}
+function onRunComplete(summary) {
+    try {
+        runCompleteHandler(summary);
+    } catch (err) {
+        // 成長/チャレンジ処理の失敗でゲーム終了処理を止めない。
+        console.warn('run completion handler failed:', err);
+    }
 }
 
 // 開始カウントダウンの進行（gameTime は進めない）。GO! 表示後に playing へ移行。
@@ -375,6 +471,13 @@ function loop(timestamp) {
         // ゲーム時間を累積（秒）
         gameState.gameTime += delta;
 
+        // Phase 7: タイムアタックの時間切れ → FINISH（GAME OVER ではなく完走扱い）
+        if (gameState.timeLimitSec > 0 && gameState.gameTime >= gameState.timeLimitSec) {
+            gameState.gameTime = gameState.timeLimitSec;
+            endGame({ finished: true });
+            return;
+        }
+
         // 画面揺れの減衰
         if (gameState.shakeTime > 0) {
             gameState.shakeTime = Math.max(0, gameState.shakeTime - delta);
@@ -404,18 +507,24 @@ function loop(timestamp) {
         // プレイヤーを更新 (delta seconds)
         player.update(delta);
 
+        // Phase 10: ゴースト記録（固定間隔に間引き。Training は記録しない）。
+        sampleGhost(gameState, player);
+
         // 新しい障害物 / パワーアップ / エネルギーコアを生成
-        if (shouldSpawn(gameState.spawnRate, delta)) {
+        // Phase 7: Training の障害物種別（all=通常 / basic=基本のみ / none=出さない）。
+        const obstaclesOn = gameState.allowedObstacles !== 'none';
+        const specialsOn = gameState.allowedObstacles === 'all';
+        if (obstaclesOn && shouldSpawn(gameState.spawnRate, delta)) {
             obstacles.push(new Obstacle(gameState));
         }
-        // Phase 4: レベル別の新障害物（それぞれ専用の出現率）
-        if (gameState.level >= LASER_START_LEVEL && shouldSpawn(LASER_SPAWN_RATE, delta)) {
+        // Phase 4: レベル別の新障害物（それぞれ専用の出現率。Training basic/none では出さない）
+        if (specialsOn && gameState.level >= LASER_START_LEVEL && shouldSpawn(LASER_SPAWN_RATE, delta)) {
             obstacles.push(new WarningLaser());
         }
-        if (gameState.level >= HOMING_START_LEVEL && shouldSpawn(HOMING_SPAWN_RATE, delta)) {
+        if (specialsOn && gameState.level >= HOMING_START_LEVEL && shouldSpawn(HOMING_SPAWN_RATE, delta)) {
             obstacles.push(new HomingObstacle(gameState));
         }
-        if (gameState.level >= GAPWALL_START_LEVEL && shouldSpawn(GAPWALL_SPAWN_RATE, delta)) {
+        if (specialsOn && gameState.level >= GAPWALL_START_LEVEL && shouldSpawn(GAPWALL_SPAWN_RATE, delta)) {
             obstacles.push(new GapWall(gameState));
         }
         if (shouldSpawn(gameState.powerupSpawnRate, delta)) {
@@ -425,7 +534,8 @@ function loop(timestamp) {
             energyCores.push(new EnergyCore(gameState));
         }
 
-        const dashInvuln = gameState.gameTime < gameState.dashInvulnUntil;
+        // Phase 7: Training の無敵はダッシュ無敵と同様に衝突をすり抜ける。
+        const dashInvuln = gameState.gameTime < gameState.dashInvulnUntil || gameState.invincible === true;
 
         // 障害物を更新と衝突判定（後方ループで安全に splice）
         for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -515,8 +625,14 @@ function loop(timestamp) {
                 registerComboHit(gameState);
                 gameState.coreCount++; // ミッション/実績/称号用
                 if (getOptions().particlesEnabled) {
-                    for (let j = 0; j < 5; j++) {
-                        particles.push(new Particle(core.x + core.width / 2, core.y + core.height / 2, 'core'));
+                    // Phase 8: コア取得エフェクト（外観のみ。色/数だけ変える）。
+                    const fx = getActiveCosmetics();
+                    const count = fx.coreEffect === 'burst' ? 8 : fx.coreEffect === 'ring' ? 10 : 5;
+                    const colorOverride = fx.coreEffect === 'ring' ? fx.color : null;
+                    const ccx = core.x + core.width / 2;
+                    const ccy = core.y + core.height / 2;
+                    for (let j = 0; j < count; j++) {
+                        particles.push(new Particle(ccx, ccy, 'core', colorOverride));
                     }
                     particles.push(new Particle(player.x + player.width / 2, player.y - 20, 'combo'));
                 }

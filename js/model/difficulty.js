@@ -24,10 +24,14 @@ export function updateLevel(gameState) {
 
 // 難易度を更新（基礎速度・出現率・特殊種確率を時間経過で上昇）。
 export function updateDifficulty(gameState) {
-    // baseSpeed を計算し、slowFactor を掛けて実効速度を決定
+    // baseSpeed を計算し、slowFactor とモード難易度倍率を掛けて実効速度を決定
     const baseIncrease = (gameState.gameTime / 60) * (MAX_SPEED - INITIAL_SPEED);
     gameState.baseSpeed = INITIAL_SPEED + Math.min(baseIncrease, MAX_SPEED - INITIAL_SPEED);
-    gameState.speed = gameState.baseSpeed * (gameState.slowFactor || 1);
+    // Phase 7: モード難易度倍率（Hardcore で加速 / Training で減速）。未設定は 1。
+    const diffMul = typeof gameState.difficultyMultiplier === 'number' && gameState.difficultyMultiplier > 0
+        ? gameState.difficultyMultiplier
+        : 1;
+    gameState.speed = gameState.baseSpeed * (gameState.slowFactor || 1) * diffMul;
 
     // 障害物出現率を増やす
     const spawnIncrease = (gameState.gameTime / 60) * (MAX_SPAWN_RATE - INITIAL_SPAWN_RATE);

@@ -24,7 +24,24 @@ let refs = {
     optionsScreen: null,
     achievementsScreen: null,
     playTitle: null,
-    missionResult: null
+    missionResult: null,
+    // Phase 7: GAME OVER / FINISH 見出しとモード表示
+    gameOverTitle: null,
+    gameOverMode: null,
+    // Phase 8/9: プロフィール / 外観 / チャレンジのオーバーレイ
+    profileScreen: null,
+    cosmeticsScreen: null,
+    challengesScreen: null,
+    // Phase 10: リプレイのオーバーレイ
+    replayScreen: null
+};
+
+// モード ID → 表示名（見出し下のラベル用）。
+const MODE_LABELS = {
+    endless: 'ENDLESS',
+    timeattack: 'TIME ATTACK',
+    hardcore: 'HARDCORE',
+    training: 'TRAINING'
 };
 
 export function configureScreens(elements) {
@@ -52,8 +69,11 @@ export function showGameOverScreen() {
 }
 
 // GAME OVER 結果の各値を表示する（値は controller が計算して渡す）。
-//   data = { score, highScore, rank: {rank, message}, maxCombo, title, missionResult }
-export function renderGameOver({ score, highScore, rank, maxCombo, title = '', missionResult = '' }) {
+//   data = { score, highScore, rank, maxCombo, title, missionResult, finished, mode }
+export function renderGameOver({ score, highScore, rank, maxCombo, title = '', missionResult = '', finished = false, mode = 'endless' }) {
+    // Phase 7: タイムアタックの時間切れは FINISH、それ以外は GAME OVER。
+    if (refs.gameOverTitle) refs.gameOverTitle.textContent = finished ? 'FINISH' : 'GAME OVER';
+    if (refs.gameOverMode) refs.gameOverMode.textContent = MODE_LABELS[mode] || String(mode || '').toUpperCase();
     if (refs.finalScore) refs.finalScore.textContent = score;
     if (refs.finalHighScore) refs.finalHighScore.textContent = highScore;
     if (refs.rankDisplay) refs.rankDisplay.textContent = rank.rank;
@@ -84,11 +104,40 @@ export function showAchievementsScreen() {
 export function hideAchievementsScreen() {
     if (refs.achievementsScreen) refs.achievementsScreen.classList.remove('active');
 }
+// Phase 8/9: プロフィール / 外観 / チャレンジのオーバーレイ
+export function showProfileScreen() {
+    if (refs.profileScreen) refs.profileScreen.classList.add('active');
+}
+export function hideProfileScreen() {
+    if (refs.profileScreen) refs.profileScreen.classList.remove('active');
+}
+export function showCosmeticsScreen() {
+    if (refs.cosmeticsScreen) refs.cosmeticsScreen.classList.add('active');
+}
+export function hideCosmeticsScreen() {
+    if (refs.cosmeticsScreen) refs.cosmeticsScreen.classList.remove('active');
+}
+export function showChallengesScreen() {
+    if (refs.challengesScreen) refs.challengesScreen.classList.add('active');
+}
+export function hideChallengesScreen() {
+    if (refs.challengesScreen) refs.challengesScreen.classList.remove('active');
+}
+export function showReplayScreen() {
+    if (refs.replayScreen) refs.replayScreen.classList.add('active');
+}
+export function hideReplayScreen() {
+    if (refs.replayScreen) refs.replayScreen.classList.remove('active');
+}
 // タイトルへ戻る際、各オーバーレイを閉じる。
 export function hideAllOverlays() {
     hidePauseScreen();
     hideOptionsScreen();
     hideAchievementsScreen();
+    hideProfileScreen();
+    hideCosmeticsScreen();
+    hideChallengesScreen();
+    hideReplayScreen();
 }
 
 // 結果画面のハイスコア表示のみ更新（初期化時に使用）。
