@@ -4,6 +4,16 @@
 > **存在するだけ**で、自動適用・自動 deploy は一切行いません。
 > このプロジェクトの作業では `supabase db push` / migration 適用 / `functions deploy` を**実行していません**。
 
+> 📋 **本番反映の実行手順は [PHASE_6_PRODUCTION_RUNBOOK.md](./PHASE_6_PRODUCTION_RUNBOOK.md) に集約**しました
+> （承認ゲート・正常/異常 E2E チェックリスト付き）。本ドキュメントは設計・背景の説明、ランブックは実行手順です。
+> 付随する SQL ヘルパー（適用前キャプチャ / 適用後検証 / ロールバック）は `scripts/supabase/` にあります:
+> - `scripts/supabase/preflight_capture.sql`（READ-ONLY・適用前の件数/ポリシー/権限の記録）
+> - `scripts/supabase/post_apply_verify.sql`（READ-ONLY・適用後の DB 検証）
+> - `scripts/supabase/rollback.sql`（手動ロールバック・既存データは削除しない）
+>
+> **状態（2026-06-28 時点）: 未適用 / NOT YET APPLIED。** 本番への `db push` / `functions deploy` /
+> `secrets set` は未実行。CLI もこの作業環境には未インストール（`supabase: command not found`）。
+
 ## 目的
 
 - ブラウザからの `leaderboard_scores` への**直接 INSERT を廃止**する。
@@ -112,6 +122,12 @@ supabase secrets set RATE_LIMIT_IP_SALT="<長いランダム文字列>"
       本番 origin（GitHub Pages）と開発 origin（localhost/127.0.0.1）を明示的に列挙する。
 - [ ] サーバー間呼び出し（`Origin` ヘッダー無し）は CORS の対象外（ブラウザのみが CORS で制限される）。
 
+> ⚠️ **秘密値の履歴露出に注意（Codex Medium 3）。** 上の `secrets set` 例は形を示すもので、
+> `SUPABASE_SERVICE_ROLE_KEY` / `RATE_LIMIT_IP_SALT` の**実値を引数に直接書くとシェル履歴・ログ・
+> プロセス引数に残る**。実運用では **`supabase secrets set --help` で値を引数に書かない方式を確認**し、
+> 無ければ **Supabase Dashboard の Secrets 画面**で設定する。一時ファイルは Git 管理外＋作業後に削除。
+> 値そのものは記録せず「設定済みか否か」だけを残す。詳細手順は `docs/PHASE_6_PRODUCTION_RUNBOOK.md` 手順 6。
+
 ## 5. デプロイ手順
 
 ```bash
@@ -138,28 +154,21 @@ supabase functions deploy challenges
 - [ ] anon キーで `leaderboard_scores` へ直接 INSERT を試すと **RLS / 権限で拒否**される。
 - [ ] anon キーで `submit_score_atomic` RPC を直接呼んでも **EXECUTE 権限が無く拒否**される。
 
-## 7. ロールバック手順
+## 7. ロールバック手順（安全停止・非破壊 / Codex High 1）
 
-```sql
--- レビュー後・手動で実行（既存ランキングデータは削除しない）
-drop function if exists public.submit_score_atomic(
-  uuid, text, text, text, integer, integer, integer, text, text, jsonb, timestamptz, integer);
-drop table if exists public.runs;
-alter table public.leaderboard_scores
-  drop column if exists run_id,
-  drop column if exists anonymous_player_id,
-  drop column if exists mode,
-  drop column if exists duration_ms,
-  drop column if exists game_version,
-  drop column if exists metrics;
--- 旧 INSERT ポリシー / テーブル権限は、適用前に控えた元の定義に従って復元する
--- （本 migration はポリシーを全削除するため、自動復元はしない）。
--- SELECT 公開ポリシー "public read leaderboard" を残すかは運用方針に従う。
-```
-- Edge Function を戻す: `supabase functions delete submit-score start-run challenges`
-- クライアント: `EDGE_FUNCTIONS_BASE` を `''` に戻す（直接 INSERT には**戻さない**）。
-- 注意: ロールバックで `runs` を drop すると過去 run の二重送信防止情報も失われる。
-  既存スコア（`leaderboard_scores`）自体は削除されない。
+> ロールバックは**破壊的撤去をしない**。`runs` テーブル・追加列・RPC は、二重送信防止・レート制限・
+> 監査情報の保全と再適用性のため**残す**。正式手順は `scripts/supabase/rollback.sql` を参照。
+
+- **機能停止（主手段）**: Edge Functions を undeploy
+  `supabase functions delete submit-score start-run challenges`
+  → service_role 経由の唯一の呼び出し元が消え、RPC は実質未使用になる。
+- **クライアント**: `EDGE_FUNCTIONS_BASE` を `''` に戻す（直接 INSERT には**戻さない**）。
+- **DB（任意・安全側の再表明）**: `scripts/supabase/rollback.sql`
+  - `runs` を**撤去しない／行を消さない**。追加列・RPC も**撤去しない**。
+  - anon / authenticated に書き込み権限を**与えない状態を再表明**（直接 INSERT を再開しない）。
+  - RPC の一般利用を**禁止のまま維持**（EXECUTE は service_role のみ）。既存スコアは削除しない。
+- 完全撤去（テーブル/列/関数の物理削除）は履歴・再適用性を損なうため**既定では行わない**。
+  必要時のみ、後日の明示的な保守作業として別レビューで判断する（バックアップ取得後）。
 
 ## セキュリティ注意
 
