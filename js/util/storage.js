@@ -40,3 +40,25 @@ export function saveJSON(key, value) {
         return false;
     }
 }
+
+// 文字列を読み込む。未設定・例外時は fallback を返す（匿名 ID など生文字列用）。
+export function loadString(key, fallback = '') {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw == null ? fallback : raw;
+    } catch (error) {
+        console.warn(`Failed to load string "${key}":`, error);
+        return fallback;
+    }
+}
+
+// 文字列を保存する。例外時は false を返す。
+export function saveString(key, value) {
+    try {
+        localStorage.setItem(key, String(value));
+        return true;
+    } catch (error) {
+        console.warn(`Failed to save string "${key}":`, error);
+        return false;
+    }
+}

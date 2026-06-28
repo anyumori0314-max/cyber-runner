@@ -99,10 +99,49 @@ cyber-runner/
 
 ## グローバルランキング（Supabase）
 
-- GAME OVER 時に `services/leaderboard.js` が Supabase REST API へスコアを送信し、`GLOBAL TOP 10` を取得して表示します。
-- 名前は最大 12 文字（未入力は `ANONYMOUS`）。送信中はボタンが `SENDING...` で無効化され、成功後は `SENT` となり再送信を防止します。
-- クライアントには **publishable (anon) key のみ** を置き（`config.js`）、アクセス制御は Supabase 側の RLS が前提です。`service_role` key は使用しません。
+- ランキングの**取得（GET）** は `services/leaderboard.js` が Supabase REST API から行い、`GLOBAL TOP 10`
+  / タイトルの `TOP 5` を表示します。期間（OVERALL / DAILY / WEEKLY）とモードで絞り込めます。
+- **スコア送信は Phase 6 でサーバー権威方式へ刷新**しました。クライアントからの**直接 INSERT は廃止**し、
+  Edge Functions（`start-run` → `submit-score`）経由でのみ検証付き登録します。RLS でクライアント INSERT を禁止し、
+  `service_role` key は **Edge Function の環境変数からのみ** 取得します（フロントには存在しません）。
+- 名前は最大 12 文字（未入力は `ANONYMOUS`）。
+- クライアントには **publishable (anon) key のみ** を置き（`config.js`）、アクセス制御は Supabase 側の RLS が前提です。
 - 通信に失敗しても「Leaderboard unavailable / You can still play.」と表示し、**ゲームプレイは継続**します。
+- ⚠ **既定ビルドではオンライン送信は無効**です（`EDGE_FUNCTIONS_BASE` が空）。SEND SCORE 押下時は
+  本番へ書き込まず「Online ranking is not enabled in this build.」を表示します。デプロイ手順は
+  [docs/SUPABASE_SECURE_LEADERBOARD_SETUP.md](./docs/SUPABASE_SECURE_LEADERBOARD_SETUP.md) を参照。
+
+## Phase 6〜10：プラットフォーム拡張
+
+Phase 1〜5（ゲームプレイ拡張）に続き、プラットフォーム機能を追加しています。詳細・検証状況・既知の制限は
+[docs/PHASE_6_10_PROGRESS.md](./docs/PHASE_6_10_PROGRESS.md) が単一の基準です。
+
+- **Phase 6 — セキュアランキング**: 直接 INSERT を廃止し、Edge Functions（`start-run` / `submit-score` /
+  `challenges`）＋ RLS によるサーバー権威方式へ。期間（OVERALL/DAILY/WEEKLY）・モード別の取得。
+  未配備時はローカルで継続し安全メッセージを表示（上記「グローバルランキング」を参照）。
+- **Phase 7 — ゲームモード**: ENDLESS / TIME ATTACK（60 秒で FINISH）/ HARDCORE（高速・x1.5・シールド無し）/
+  TRAINING（無敵などを選べる練習。記録・送信・XP なし）。
+- **Phase 8 — 成長 / カスタマイズ**: XP・レベル（ゲームスコアとは分離）、プロフィール統計、外観
+  （カラー/発光/軌跡/コアエフェクト/称号は**視覚のみ・性能不変**。解放はレベル/実績/チャレンジ）。
+- **Phase 9 — チャレンジ**: 全ユーザー共通 seed による決定的なデイリー 3 / ウィークリー 2。サーバー時刻が
+  権威、未配備時はローカル UTC フォールバック（UI に明記）。報酬は XP / 外観解放（スコア加点なし）。
+- **Phase 10 — ゴースト / リプレイ / 共有**: 自己ベスト時のゴーストを IndexedDB に保存し半透明表示
+  （当たり判定なし）。簡易リプレイ（再生/停止/最初から/速度・送信不可）。Canvas 結果カード → PNG ダウンロード
+  ＋ 共有文コピー（外部画像 / CDN / 個人情報なし）。
+
+新規ディレクトリ/ファイル: `js/model/{game-modes,progression,cosmetics,challenges,replay}.js`、
+`js/services/{run-service,challenge-service}.js`、`js/util/indexed-db.js`、
+`js/view/{mode-select,profile,cosmetics,challenges,replay,share}-view.js`、`supabase/`（migration + functions）。
+依存方向は従来どおり一方向で、循環依存はありません（再開セッションの静的解析で確認済み）。
+
+### 既知の制限（抜粋）
+
+- **既定ビルドはオンライン送信無効**（`EDGE_FUNCTIONS_BASE` 空）。本番 Supabase は未適用（migration 未実行・
+  Edge Functions 未デプロイ）。モード絞り込みは `mode` 列の migration 適用後に有効。
+- **⚠ タイトル上部ボタン列のレイアウト崩れ（未修正）**: Phase 8〜10 でボタンが 8 個に増え、`.title-buttons` が
+  `flex-wrap` 未指定のため、ビューポートが狭いと **START が画面左外へはみ出す**ことがある（横スクロールが必要）。
+  1 行の CSS 修正（`flex-wrap: wrap`）で解消可能。Codex レビューで対応方針を判断。
+- リプレイはプレイヤー位置の再生のみ（障害物は再現しない）。詳細は PROGRESS ドキュメント参照。
 
 ## 起動方法（ローカル）
 

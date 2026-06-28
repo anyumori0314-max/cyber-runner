@@ -12,6 +12,36 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, COMBO_TIMEOUT, COMBO_WARNING_SECONDS } from '../config.js';
 import { player, obstacles, powerUps, energyCores, particles, popups, gameState } from '../state.js';
 import { getOptions } from '../model/options.js';
+import { getActive as getActiveCosmetics } from '../model/cosmetics.js';
+import { getGhostDisplayX } from '../model/replay.js';
+
+// Phase 8: 移動軌跡の位置履歴（描画専用・ゲーム状態とは独立）。
+const trailHistory = [];
+const TRAIL_MAX = 14;
+
+// 軌跡を描く（外観のみ。当たり判定・スコアへは影響しない）。
+function drawTrail(ctx, cosmetic) {
+    const mode = cosmetic.trail;
+    if (mode === 'none') { trailHistory.length = 0; return; }
+    const cx = player.x + player.width / 2;
+    const cy = player.y + player.height / 2;
+    trailHistory.push({ x: cx, y: cy });
+    if (trailHistory.length > TRAIL_MAX) trailHistory.shift();
+
+    ctx.save();
+    const color = cosmetic.color || '#00ff88';
+    for (let i = 0; i < trailHistory.length; i++) {
+        const p = trailHistory[i];
+        const a = (i / trailHistory.length) * 0.5;
+        ctx.globalAlpha = a;
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 8;
+        const size = mode === 'spark' ? 3 : 6;
+        ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
+    }
+    ctx.restore();
+}
 
 // グリッドパターン描画（背景エフェクト）
 export function drawGrid(ctx) {
@@ -57,12 +87,32 @@ function shakeOffset() {
 // ゲームシーン全体を描画する（毎フレーム呼ばれる）。
 export function drawScene(ctx) {
     const particlesEnabled = getOptions().particlesEnabled;
+    const cosmetic = getActiveCosmetics();
     drawBackground(ctx);
 
     // エンティティ群は画面揺れの影響を受ける
     const shake = shakeOffset();
     ctx.save();
     if (shake) ctx.translate(shake.x, shake.y);
+
+    // 移動軌跡（プレイヤーより背面に描く・外観のみ）
+    drawTrail(ctx, cosmetic);
+
+    // Phase 10: 自己ベストゴースト（半透明・当たり判定なし・ゲームへ干渉しない）
+    const ghostX = getGhostDisplayX(gameState);
+    if (ghostX != null) {
+        ctx.save();
+        ctx.globalAlpha = 0.32;
+        ctx.fillStyle = '#9fd8ff';
+        ctx.shadowColor = '#9fd8ff';
+        ctx.shadowBlur = 10;
+        ctx.fillRect(ghostX, player.y, player.width, player.height);
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = '#cfeaff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(ghostX, player.y, player.width, player.height);
+        ctx.restore();
+    }
 
     for (let pu of powerUps) pu.draw(ctx);
     for (let core of energyCores) core.draw(ctx);
@@ -91,7 +141,7 @@ export function drawScene(ctx) {
         ctx.strokeRect(player.x - 2, player.y - 2, player.width + 4, player.height + 4);
         ctx.restore();
     }
-    player.draw(ctx);
+    player.draw(ctx, cosmetic);
 
     // ポップアップ（取得メッセージ・スコア表示など）。TTL/位置更新はメインループ。
     for (let i = popups.length - 1; i >= 0; i--) {

@@ -12,6 +12,14 @@
 > - Stage 5（Controller 分離・`main.js` 化、旧 `script.js` 削除）… **完了**
 >
 > 最新の実際のファイル構成は [README](../README.md) を参照してください。
+>
+> **Phase 6〜10 拡張（2026-06 時点）**: 上記レイヤ構成（Model / View / Controller + Services・
+> Cross-cutting）は維持したまま機能を追加した。新規の Model（`game-modes` / `progression` /
+> `cosmetics` / `challenges` / `replay`）・View（`mode-select` / `profile` / `cosmetics` /
+> `challenges` / `replay` / `share`）・Services（`run-service` / `challenge-service`）・
+> Util（`indexed-db`）も同じ依存方向（一方向・循環なし。再開セッションの静的解析で確認済み）に従う。
+> セキュアランキングのサーバー側は `supabase/`（migration + Edge Functions）。
+> 実装内容・検証状況・既知の制限は [PHASE_6_10_PROGRESS](./PHASE_6_10_PROGRESS.md) を参照。
 
 ---
 

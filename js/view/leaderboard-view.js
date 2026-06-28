@@ -21,7 +21,10 @@ let refs = {
     playerNameInput: null,
     // Phase 1: タイトル画面 TOP5
     titleLeaderboardList: null,
-    titleLeaderboardStatus: null
+    titleLeaderboardStatus: null,
+    // Phase 6: 自分の順位表示 / 送信セクション（Training で非表示）
+    leaderboardMyRank: null,
+    scoreSubmitSection: null
 };
 
 export function configureLeaderboardView(elements) {
@@ -103,6 +106,16 @@ export function updateSendScoreButton() {
     } else {
         refs.sendScoreBtn.textContent = 'SEND SCORE';
     }
+}
+
+// Phase 6: 自分の順位テキストを表示（null/未取得時は空欄）。
+export function setMyRankText(text) {
+    if (refs.leaderboardMyRank) refs.leaderboardMyRank.textContent = text || '';
+}
+
+// Phase 7: 送信セクションの表示/非表示（Training は送信不可なので隠す）。
+export function setScoreSubmitVisible(visible) {
+    if (refs.scoreSubmitSection) refs.scoreSubmitSection.style.display = visible ? '' : 'none';
 }
 
 // 入力欄の生プレイヤー名を取得（services が正規化する）。

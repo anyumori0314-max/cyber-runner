@@ -15,7 +15,8 @@ import {
     INITIAL_SPAWN_RATE,
     INITIAL_POWERUP_SPAWN,
     ENERGY_CORE_SPAWN_RATE,
-    HIGH_SCORE_STORAGE_KEY
+    HIGH_SCORE_STORAGE_KEY,
+    DEFAULT_GAME_MODE
 } from './config.js';
 import { Player } from './model/entities.js';
 
@@ -90,7 +91,17 @@ export const gameState = {
     // ====== Phase 5: ランミッション ======
     mission: null, // 現在のミッション定義 { id, label, target, type }
     missionProgress: 0, // 現在の進捗
-    missionDone: false // 報酬付与済みか（1プレイ1回）
+    missionDone: false, // 報酬付与済みか（1プレイ1回）
+
+    // ====== Phase 6-7: ゲームモード / セキュアラン ======
+    mode: DEFAULT_GAME_MODE, // 'endless' | 'timeattack' | 'hardcore' | 'training'
+    timeLimitSec: 0, // >0 でタイムアタック（0=無制限）
+    finished: false, // タイムアタックの時間切れ FINISH（GAME OVER と区別）
+    modeScoreMultiplier: 1, // モードのスコア倍率（Endless=1）
+    difficultyMultiplier: 1, // モードの難易度倍率（速度に乗算。Endless=1）
+    invincible: false, // Training の無敵 ON
+    allowedObstacles: 'all', // Training の障害物種別 'all' | 'basic' | 'none'
+    runStartedAtMs: 0 // duration_ms 計測用のクライアント開始時刻
 };
 
 // ===================================
@@ -158,6 +169,16 @@ export function resetState() {
     gameState.shakeMag = 0;
     gameState.missionProgress = 0;
     gameState.missionDone = false;
+
+    // Phase 6-7: モード関連の既定値（mode 自体は controller が選択値を保持する）。
+    // タイムアタック等のモード固有値は resetState 後に controller がモードから適用する。
+    gameState.timeLimitSec = 0;
+    gameState.finished = false;
+    gameState.modeScoreMultiplier = 1;
+    gameState.difficultyMultiplier = 1;
+    gameState.invincible = false;
+    gameState.allowedObstacles = 'all';
+    gameState.runStartedAtMs = Date.now();
 
     // 障害物やプレイヤーの状態をリセット（配列は in-place クリア）
     obstacles.length = 0;

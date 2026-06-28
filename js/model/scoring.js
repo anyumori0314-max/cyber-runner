@@ -29,6 +29,13 @@ export function scoreMultiplier(gameState) {
     return gameState.doubleUntil && gameState.gameTime < gameState.doubleUntil ? DOUBLE_SCORE_MULTIPLIER : 1;
 }
 
+// Phase 7: モードのスコア倍率（Hardcore 等）。未設定（Endless / Phase 1-5）は 1。
+// DOUBLE SCORE と同じく「新規獲得時のみ」乗算するため、既獲得スコアは変化しない。
+export function modeMultiplier(gameState) {
+    const m = gameState.modeScoreMultiplier;
+    return typeof m === 'number' && m > 0 ? m : 1;
+}
+
 // コンボ数から倍率を取得
 export function getComboMultiplier(combo) {
     if (combo >= 20) return COMBO_MULTIPLIERS[20];
@@ -64,7 +71,7 @@ export function getNextRankInfo(score) {
 // このフレームの生存点をコンボ倍率＋DOUBLE SCORE倍率で差分加算する（再計算しない）。
 export function accumulateSurvivalScore(gameState, delta) {
     const multiplier = getComboMultiplier(gameState.combo);
-    gameState.survivalScore += delta * 10 * multiplier * scoreMultiplier(gameState);
+    gameState.survivalScore += delta * 10 * multiplier * scoreMultiplier(gameState) * modeMultiplier(gameState);
 }
 
 // 最終表示スコアを合成する（survivalScore + bonusScore）。倍率の再適用はしない。
@@ -73,24 +80,24 @@ export function composeScore(gameState) {
     return gameState.score;
 }
 
-// コア取得スコア（+100、DOUBLE時×2）を加算スコアへ積む。
+// コア取得スコア（+100、DOUBLE時×2、モード倍率）を加算スコアへ積む。
 export function addCoreScore(gameState) {
-    gameState.bonusScore += ENERGY_CORE_SCORE * scoreMultiplier(gameState);
+    gameState.bonusScore += ENERGY_CORE_SCORE * scoreMultiplier(gameState) * modeMultiplier(gameState);
 }
 
-// ボーナスパワーアップ（+50、DOUBLE時×2）を加算スコアへ積む。
+// ボーナスパワーアップ（+50、DOUBLE時×2、モード倍率）を加算スコアへ積む。
 export function addBonusScore(gameState) {
-    gameState.bonusScore += BONUS_SCORE * scoreMultiplier(gameState);
+    gameState.bonusScore += BONUS_SCORE * scoreMultiplier(gameState) * modeMultiplier(gameState);
 }
 
-// ニアミス加点（+25、DOUBLE時×2）。
+// ニアミス加点（+25、DOUBLE時×2、モード倍率）。
 export function addNearMissScore(gameState) {
-    gameState.bonusScore += NEAR_MISS_SCORE * scoreMultiplier(gameState);
+    gameState.bonusScore += NEAR_MISS_SCORE * scoreMultiplier(gameState) * modeMultiplier(gameState);
 }
 
-// ミッション報酬（+500、DOUBLE時×2）。
+// ミッション報酬（+500、DOUBLE時×2、モード倍率）。
 export function addMissionReward(gameState) {
-    gameState.bonusScore += MISSION_REWARD * scoreMultiplier(gameState);
+    gameState.bonusScore += MISSION_REWARD * scoreMultiplier(gameState) * modeMultiplier(gameState);
 }
 
 // コア取得時のコンボ処理（コンボ増加 / 最大コンボ更新 / 取得時刻記録）。

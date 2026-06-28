@@ -81,12 +81,15 @@ export class Player {
         }
     }
 
-    // プレイヤーを描画
-    draw(ctx) {
+    // プレイヤーを描画（style は外観カスタマイズのみ：色・発光。未指定で従来見た目）。
+    // ★ style は描画にしか使わない（速度・当たり判定・無敵・スコアへは一切影響しない）。
+    draw(ctx, style = null) {
+        const bodyColor = (style && style.color) || '#00ff88';
+        const blur = style && style.glow && Number.isFinite(style.glow.blur) ? style.glow.blur : 15;
         // プレイヤーの本体
-        ctx.fillStyle = '#00ff88';
-        ctx.shadowColor = '#00ff88';
-        ctx.shadowBlur = 15;
+        ctx.fillStyle = bodyColor;
+        ctx.shadowColor = bodyColor;
+        ctx.shadowBlur = blur;
         ctx.fillRect(this.x, this.y, this.width, this.height);
 
         // プレイヤーの枠
@@ -326,10 +329,11 @@ export class EnergyCore {
 // Particle — パーティクル効果（core / combo / その他）
 // ===================================
 export class Particle {
-    constructor(x, y, type = 'core') {
+    constructor(x, y, type = 'core', colorOverride = null) {
         this.x = x;
         this.y = y;
         this.type = type; // 'core', 'combo', 'shield' など
+        this.colorOverride = colorOverride; // 外観カスタマイズの色（任意・描画専用）
         this.life = 1.0; // 0 ～ 1
         this.lifeMax = type === 'core' ? 0.6 : 0.4;
         if (type === 'core') {
@@ -356,7 +360,9 @@ export class Particle {
         const alpha = Math.max(0, this.life);
         ctx.save();
         ctx.globalAlpha = alpha;
-        if (this.type === 'core') {
+        if (this.colorOverride) {
+            ctx.fillStyle = this.colorOverride;
+        } else if (this.type === 'core') {
             ctx.fillStyle = '#ffff00';
         } else if (this.type === 'combo') {
             ctx.fillStyle = '#ff00ff';

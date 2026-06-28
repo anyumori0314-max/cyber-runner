@@ -157,3 +157,44 @@ export const POWERUP_WEIGHTS = {
 
 // ====== Phase 5: ミッション / 実績 ======
 export const MISSION_REWARD = 500; // ミッション達成報酬（基本）
+
+// ===================================
+// Phase 6〜10: プラットフォーム拡張の定数（値はここに集約）
+// ===================================
+
+// ====== Phase 6: セキュアランキング / Edge Functions ======
+// Edge Functions のベース URL。空文字 = 未配備（クライアントはローカルフォールバックで継続）。
+// 配備後に `${SUPABASE_URL}/functions/v1` を設定する（詳細は docs/SUPABASE_SECURE_LEADERBOARD_SETUP.md）。
+export const EDGE_FUNCTIONS_BASE = '';
+export const GAME_VERSION = '1.0.0'; // スコア送信に含めるクライアント版数
+export const ANON_ID_STORAGE_KEY = 'cyberRunnerAnonId'; // 端末ごとの匿名 ID
+export const RUN_LOCAL_EXPIRY_MS = 10 * 60 * 1000; // ローカル run の有効期限（10分）
+export const LEADERBOARD_PERIODS = ['overall', 'daily', 'weekly']; // ランキング期間
+// ランキング GET 失敗時のフォールバック用キャッシュ（最後に正常取得した結果を保持）。
+export const LEADERBOARD_CACHE_KEY = 'cyberRunnerLeaderboardCache';
+export const LEADERBOARD_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // これより古いキャッシュは「過去のデータ」と表示
+
+// ====== Phase 7: ゲームモード ======
+export const GAME_MODE_IDS = ['endless', 'timeattack', 'hardcore', 'training'];
+export const DEFAULT_GAME_MODE = 'endless';
+export const TIME_ATTACK_DURATION_SEC = 60; // タイムアタックの制限時間
+
+// ====== Phase 8: 成長 / カスタマイズ ======
+export const PROFILE_STORAGE_KEY = 'cyberRunnerProfile';
+export const PROGRESS_STORAGE_KEY = 'cyberRunnerProgress';
+export const COSMETICS_STORAGE_KEY = 'cyberRunnerCosmetics';
+// XP 獲得の基本配分（ゲームスコアとは分離して管理する）
+export const XP_PER_RUN = 20; // プレイ完了
+export const XP_PER_SCORE = 0.02; // スコア1点あたり
+export const XP_PER_MISSION = 50; // ミッション達成
+export const XP_PER_CHALLENGE = 80; // チャレンジ達成
+export const XP_PER_ACHIEVEMENT = 40; // 実績解除（新規1件あたり）
+
+// ====== Phase 9: チャレンジ ======
+export const CHALLENGES_STORAGE_KEY = 'cyberRunnerChallenges';
+
+// ====== Phase 10: ゴースト / リプレイ / 共有 ======
+export const REPLAY_DB_NAME = 'cyberRunnerReplays';
+export const REPLAY_STORE_NAME = 'ghosts';
+export const GHOST_SAMPLE_INTERVAL_SEC = 0.1; // ゴースト記録の固定間隔（秒）
+export const GHOST_MAX_SAMPLES = 6000; // 1リプレイの最大サンプル数（容量上限の保険）

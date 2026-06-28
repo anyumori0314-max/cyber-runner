@@ -10,6 +10,13 @@
 > - 構成は `js/config.js`・`js/state.js`・`js/model/*`・`js/view/*`・`js/controller/*`・
 >   `js/services/leaderboard.js`・`js/audio/audio-manager.js`・`js/util/errors.js`。
 > - スコアは **生存点の差分加算方式**（コンボ倍率低下でも既獲得分は減少しない。詳細は §5.6）。
+>
+> **拡張ステータス（2026-06 時点）**: 本書は MVP（Phase 1〜5 まで）の仕様を定義する。
+> その後の **Phase 6〜10（セキュアランキング / ゲームモード / 成長・カスタマイズ / チャレンジ /
+> ゴースト・リプレイ・共有）** の仕様・実装内容・未実施テスト・既知の制限は
+> [PHASE_6_10_PROGRESS](./PHASE_6_10_PROGRESS.md) を単一の基準とする（本書の MVP スコープは不変）。
+> なお Phase 6 以降、スコア送信は **直接 INSERT を廃止し Edge Functions 経由のサーバー権威方式** へ変更
+> （本番未配備の既定ビルドではオンライン送信は無効）。
 
 ---
 

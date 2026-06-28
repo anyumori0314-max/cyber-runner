@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>避けろ！サイバーランナー</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -20,6 +21,39 @@
                     <button id="muteBtn" class="btn btn-secondary">SOUND</button>
                     <button id="titleOptionsBtn" class="btn btn-secondary">OPTIONS</button>
                     <button id="achievementsBtn" class="btn btn-secondary">ACHIEVEMENTS</button>
+                    <button id="profileBtn" class="btn btn-secondary">PROFILE</button>
+                    <button id="cosmeticsBtn" class="btn btn-secondary">COSMETICS</button>
+                    <button id="challengesBtn" class="btn btn-secondary">CHALLENGES</button>
+                    <button id="replayTitleBtn" class="btn btn-secondary">REPLAY</button>
+                </div>
+                <div class="mode-select" id="modeSelect">
+                    <div class="mode-buttons" id="modeButtons">
+                        <button type="button" class="btn btn-small mode-btn active" data-mode="endless">ENDLESS</button>
+                        <button type="button" class="btn btn-small mode-btn" data-mode="timeattack">TIME ATTACK</button>
+                        <button type="button" class="btn btn-small mode-btn" data-mode="hardcore">HARDCORE</button>
+                        <button type="button" class="btn btn-small mode-btn" data-mode="training">TRAINING</button>
+                    </div>
+                    <p class="mode-desc" id="modeDesc"></p>
+                    <label class="ghost-toggle"><input type="checkbox" id="ghostToggle" checked> ゴースト表示</label>
+                    <div class="training-settings" id="trainingSettings" style="display:none;">
+                        <label class="option-row"><span>無敵</span><input type="checkbox" id="trInvincible"></label>
+                        <label class="option-row">
+                            <span>ゲーム速度</span>
+                            <select id="trSpeed">
+                                <option value="0.5">0.5x</option>
+                                <option value="1" selected>1.0x</option>
+                                <option value="1.5">1.5x</option>
+                            </select>
+                        </label>
+                        <label class="option-row">
+                            <span>障害物</span>
+                            <select id="trObstacles">
+                                <option value="all" selected>すべて</option>
+                                <option value="basic">基本のみ</option>
+                                <option value="none">なし</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
                 <p class="mission-preview" id="titleMission"></p>
                 <div class="high-score-display">
@@ -56,12 +90,23 @@
                 <span id="missionStatus" class="hud-chip"></span>
             </div>
             <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <div class="training-panel" id="trainingPanel" style="display:none;">
+                <span class="training-panel-label">TRAINING — パワーアップ確認:</span>
+                <button type="button" class="btn btn-small tr-pu" data-pu="shield">SHIELD</button>
+                <button type="button" class="btn btn-small tr-pu" data-pu="slow">SLOW</button>
+                <button type="button" class="btn btn-small tr-pu" data-pu="bonus">BONUS</button>
+                <button type="button" class="btn btn-small tr-pu" data-pu="magnet">MAGNET</button>
+                <button type="button" class="btn btn-small tr-pu" data-pu="bomb">BOMB</button>
+                <button type="button" class="btn btn-small tr-pu" data-pu="double">DOUBLE</button>
+                <button type="button" class="btn btn-small tr-pu" data-pu="dashcharge">DASH</button>
+            </div>
         </div>
 
         <!-- ゲームオーバー画面 -->
         <div id="gameOverScreen" class="screen">
             <div class="game-over-content">
-                <h2 class="game-over-title">GAME OVER</h2>
+                <h2 class="game-over-title" id="gameOverTitle">GAME OVER</h2>
+                <p class="game-over-mode" id="gameOverMode"></p>
                 <div class="rank-display" id="rankDisplay"></div>
                 <div class="score-result">
                     <p class="score-label">スコア</p>
@@ -78,7 +123,7 @@
                 <p class="rank-message" id="rankMessage"></p>
                 <p class="play-title" id="playTitle"></p>
                 <p class="mission-result" id="missionResult"></p>
-                <div class="score-submit">
+                <div class="score-submit" id="scoreSubmit">
                     <label class="score-label" for="playerNameInput">PLAYER NAME</label>
                     <div class="score-submit-row">
                         <input id="playerNameInput" class="player-name-input" type="text" maxlength="12" autocomplete="off" placeholder="ANONYMOUS">
@@ -88,9 +133,35 @@
                 </div>
                 <div class="leaderboard-panel">
                     <h3>GLOBAL TOP 10</h3>
+                    <div class="leaderboard-filters">
+                        <div class="lb-periods" id="lbPeriods">
+                            <button type="button" class="btn btn-small lb-period active" data-period="overall">OVERALL</button>
+                            <button type="button" class="btn btn-small lb-period" data-period="daily">DAILY</button>
+                            <button type="button" class="btn btn-small lb-period" data-period="weekly">WEEKLY</button>
+                        </div>
+                        <select id="lbModeFilter" class="lb-mode-filter" aria-label="Mode filter">
+                            <option value="all">All Modes</option>
+                            <option value="endless">Endless</option>
+                            <option value="timeattack">Time Attack</option>
+                            <option value="hardcore">Hardcore</option>
+                        </select>
+                    </div>
+                    <p class="leaderboard-myrank" id="leaderboardMyRank"></p>
                     <ol id="leaderboardList" class="leaderboard-list">
                         <li class="leaderboard-empty">Loading...</li>
                     </ol>
+                </div>
+                <div class="result-actions">
+                    <button id="shareBtn" class="btn btn-secondary btn-small">RESULT CARD</button>
+                    <button id="replayBtn" class="btn btn-secondary btn-small">REPLAY</button>
+                </div>
+                <div class="share-area" id="shareArea" style="display:none;">
+                    <canvas id="shareCanvas" width="600" height="315" class="share-canvas"></canvas>
+                    <div class="share-buttons">
+                        <button id="shareDownloadBtn" class="btn btn-small">PNG ダウンロード</button>
+                        <button id="shareCopyBtn" class="btn btn-small">共有文をコピー</button>
+                    </div>
+                    <p class="share-status" id="shareStatus"></p>
                 </div>
                 <button id="retryBtn" class="btn btn-primary">RETRY</button>
             </div>
@@ -141,6 +212,55 @@
                 <h2 class="overlay-title">ACHIEVEMENTS</h2>
                 <ul id="achievementsList" class="achievements-list"></ul>
                 <button id="achievementsBackBtn" class="btn btn-primary">BACK</button>
+            </div>
+        </div>
+
+        <!-- プロフィールオーバーレイ（Phase 8） -->
+        <div id="profileScreen" class="screen overlay-screen">
+            <div class="overlay-content profile-content">
+                <h2 class="overlay-title">PROFILE</h2>
+                <div class="profile-level" id="profileLevel">LV 1</div>
+                <div class="xp-bar"><div class="xp-bar-fill" id="profileXpBar"></div></div>
+                <p class="xp-text" id="profileXpText"></p>
+                <ul class="stat-list" id="profileStats"></ul>
+                <h3>モード別ベスト</h3>
+                <ul class="stat-list" id="profileBest"></ul>
+                <button id="profileBackBtn" class="btn btn-primary">BACK</button>
+            </div>
+        </div>
+
+        <!-- 外観カスタマイズオーバーレイ（Phase 8） -->
+        <div id="cosmeticsScreen" class="screen overlay-screen">
+            <div class="overlay-content cosmetics-content">
+                <h2 class="overlay-title">COSMETICS</h2>
+                <div id="cosmeticsContainer" class="cosmetics-container"></div>
+                <button id="cosmeticsBackBtn" class="btn btn-primary">BACK</button>
+            </div>
+        </div>
+
+        <!-- チャレンジオーバーレイ（Phase 9） -->
+        <div id="challengesScreen" class="screen overlay-screen">
+            <div class="overlay-content challenges-content">
+                <h2 class="overlay-title">CHALLENGES</h2>
+                <div id="challengesContainer" class="challenges-container"></div>
+                <p class="challenges-source" id="challengesSource"></p>
+                <button id="challengesBackBtn" class="btn btn-primary">BACK</button>
+            </div>
+        </div>
+
+        <!-- リプレイオーバーレイ（Phase 10） -->
+        <div id="replayScreen" class="screen overlay-screen">
+            <div class="overlay-content replay-content">
+                <h2 class="overlay-title">REPLAY</h2>
+                <canvas id="replayCanvas" width="320" height="240" class="replay-canvas"></canvas>
+                <p class="replay-status" id="replayStatus"></p>
+                <div class="replay-controls">
+                    <button id="replayPlayBtn" class="btn btn-small">▶ 再生</button>
+                    <button id="replayPauseBtn" class="btn btn-small">⏸ 停止</button>
+                    <button id="replayRestartBtn" class="btn btn-small">⏮ 最初から</button>
+                    <button id="replaySpeedBtn" class="btn btn-small">1x</button>
+                </div>
+                <button id="replayBackBtn" class="btn btn-primary">BACK</button>
             </div>
         </div>
 
