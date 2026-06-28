@@ -267,3 +267,67 @@
 
 Codex 指摘 10 項目はすべて実装・テスト済みで、コード変更を要する未完了箇所はなし。
 **Codex 再レビューへ進行可能**。
+
+---
+
+## Phase 6 本番反映の準備（作業A・ブランチ `ops/phase6-supabase-production`）
+
+> 実施日時: 2026-06-28。**本番操作（`db push` / `functions deploy` / `secrets set`）は未実行**。
+> 承認ゲートで停止。commit/push/merge も未実施。
+
+### この作業の前提・ブロッカー
+
+- 作業ブランチ: `ops/phase6-supabase-production`（起点 commit `43aaa31`）。作業ツリー clean。
+- `npm test` / `npm run verify` = **73/73 PASS**（baseline 維持）。
+- **Supabase CLI がこの作業環境に未インストール**（`supabase: command not found`）。
+- 本番適用は (1) CLI、(2) 人間の本番認証情報、(3) 承認ゲート（指示書の必須確認 8）を要するため、
+  自動エージェントは実行不可。**準備物の作成＋承認ゲートでの停止**に限定した。
+
+### 追加した準備物（コードの本番動作は変えない・ドキュメント/SQL のみ）
+
+- 新規 `docs/PHASE_6_PRODUCTION_RUNBOOK.md`
+  — link/diff/backup → 承認ゲート → `db push` → 適用後検証 → secrets → deploy → クライアント有効化
+  → 正常系 6 + **異常系 9 ケース**（409/409/400/422/400/CORS/429/直接INSERT/直接RPC）の E2E チェックリスト。
+- 新規 `scripts/supabase/preflight_capture.sql`（READ-ONLY・適用前の件数/ポリシー/権限を記録）。
+- 新規 `scripts/supabase/post_apply_verify.sql`（READ-ONLY・適用後の DB 検証）。
+- 新規 `scripts/supabase/rollback.sql`（手動ロールバック・既存ランキングデータは削除しない）。
+- 更新 `docs/SUPABASE_SECURE_LEADERBOARD_SETUP.md`（ランブック/スクリプトへのポインタと「未適用」状態を明記）。
+
+### migration 静的安全監査（適用前・確認済み）
+
+`20260627090000_secure_leaderboard.sql` は**非破壊・冪等**であることを全文確認:
+- `create table if not exists` / `add column if not exists` のみ。**DELETE / TRUNCATE / DROP TABLE は無い**。
+- `update ... set mode='legacy' where mode is null` は列バックフィルのみ（行は消えない）。
+- ポリシーは対象 2 テーブルに限定して DROP→SELECT 公開のみ再作成（名前非依存の監査）。
+- RPC・GRANT/REVOKE はロール存在チェック付きで冪等。ロールバック手順を末尾に同梱。
+
+### 秘密情報
+
+- service_role key・`RATE_LIMIT_IP_SALT` の実値は**いかなるファイル/報告にも記載していない**（runbook も placeholder）。
+- runbook が参照するのは公開値のみ（project ref `pfgutguzgskdtntoovkc`・publishable anon key。いずれも `js/config.js` に既出）。
+
+### 次アクション（人間）
+
+`docs/PHASE_6_PRODUCTION_RUNBOOK.md` の手順 0〜2 を実施 → 手順 3 の承認ゲートで承認 → 手順 4 以降を実行。
+
+---
+
+## Codex レビュー指摘の修正（本番反映準備・2026-06-28・ブランチ `ops/phase6-supabase-production`）
+
+> 本番 Supabase への接続・migration・deploy・secrets 設定・INSERT は**一切行わず**、
+> 指摘ファイル（SQL/Runbook/docs）のみ最小修正。git add/commit/push/merge なし。
+
+判定: 要修正（Critical 0 / High 2 / Medium 3 / Low 1）→ すべて対応済み。
+
+| 指摘 | 対応 | ファイル |
+|---|---|---|
+| **High 1** rollback の `DROP TABLE public.runs` | 破壊的撤去を全廃。`runs`/追加列/RPC を**残す**安全停止へ刷新。anon/authenticated 書き込みを与えない再表明＋RPC 一般利用禁止維持。完全撤去は散文で「後日の明示保守」に限定（実行可能な DROP/DELETE/TRUNCATE/DROP COLUMN/DROP FUNCTION を含めない） | `scripts/supabase/rollback.sql`（＋ setup §7 整合） |
+| **High 2** RPC EXECUTE を明示検証していない | `has_function_privilege` + 完全シグネチャ（`to_regprocedure`）で `public/anon/authenticated/service_role` の EXECUTE 可否を true/false 判定し、期待値（service_role のみ true）と不一致なら **FAIL** を出力。PUBLIC は ACL から判定 | `scripts/supabase/post_apply_verify.sql`（E2） |
+| **Medium 1** 追加列全体の検証不足 | migration を正本に、`leaderboard_scores`（run_id/anonymous_player_id/mode/duration_ms/game_version/metrics）と `runs`（id/mode/anonymous_player_id/ip_hash/started_at/expires_at/submitted/created_at）の schema/table/column/data_type/is_nullable/default を出力＋**不足判定（FAIL）**。migration に無い列は推測で含めない | `scripts/supabase/post_apply_verify.sql`（H/H2/H3） |
+| **Medium 2** preflight の制約/index baseline 不足 | `pg_constraint` / `pg_index` で対象 2 テーブルに**厳密限定**して constraint（名前/種別/定義）と index（名前/定義/unique/primary）を READ-ONLY で取得 | `scripts/supabase/preflight_capture.sql`（8/9） |
+| **Medium 3** secrets 入力の履歴露出 | チャット/SS/ログ/履歴/Git/.env への秘密値残置を禁止。`--help` で引数直書きしない方式を確認、無ければ Dashboard。一時ファイルは Git 管理外＋作業後削除。値は記録せず「設定済みか」だけ記録。CLI オプションは推測で書かない | `docs/PHASE_6_PRODUCTION_RUNBOOK.md`（§6）＋ setup §4 |
+| **Low** E2E 失敗時の Phase 11 停止が未明文 | 「E2E 正常系・異常系が全合格するまで Phase 11 実装/PR マージ/本番公開へ進まない」を明記＋停止条件リスト | `docs/PHASE_6_PRODUCTION_RUNBOOK.md`（§13） |
+
+注: `runs` は migration 定義どおり主キー列が `id`（`run_id` ではない）、開始時刻は `started_at`
+（`server_started_at` ではない）、`submitted_at` 列は無い。検証 SQL はこの実体に合わせ、
+`client_started_at` 等の未追加列は対象にしていない。
