@@ -101,7 +101,21 @@ export const gameState = {
     difficultyMultiplier: 1, // モードの難易度倍率（速度に乗算。Endless=1）
     invincible: false, // Training の無敵 ON
     allowedObstacles: 'all', // Training の障害物種別 'all' | 'basic' | 'none'
-    runStartedAtMs: 0 // duration_ms 計測用のクライアント開始時刻
+    runStartedAtMs: 0, // duration_ms 計測用のクライアント開始時刻
+
+    // ====== Phase 11: ウェーブ／イベントが速度・出現率・描画へ与える補正（中立値 = 既存挙動） ======
+    waveSpeedBonus: 0, // サイクル難易度による速度加算係数（0 = 影響なし）
+    eventSpeedMult: 1, // HIGH SPEED 等の速度倍率（1 = 影響なし。終了時に正確に 1 へ戻す）
+    eventCoreMult: 1, // CORE RUSH のコア出現倍率（1 = 影響なし）
+    darkZone: false, // DARK ZONE の視界制限（描画のみ）
+    laserStorm: false, // LASER STORM 中の追加レーザー出現（loop が参照）
+    // ====== Phase 11: 今回プレイのウェーブ／ボス統計（分析・結果表示用） ======
+    waveReached: 1, // 到達した最大ウェーブ番号（サイクル跨ぎでも 1..5）
+    bossReached: 0, // 到達したボス数（撃破有無に関わらず開始した数）
+    bossDefeated: 0, // 撃破したボス数
+    powerupsCollected: 0, // 取得したパワーアップ数
+    // ====== Phase 13: 分析用の終了原因（'obstacle'|'laser'|'homing'|'gapwall'|'boss'|'finish'|'unknown'） ======
+    deathCause: 'unknown'
 };
 
 // ===================================
@@ -124,8 +138,50 @@ export const popups = []; // テキストのフローティング表示
 export const loopState = {
     rafId: null, // requestAnimationFrame の ID（常に1本に保つ）
     lastTimestamp: null, // 前フレームの timestamp（ms）
-    lastLevel: 0 // レベルアップ効果音の検出用
+    lastLevel: 0, // レベルアップ効果音の検出用
+    ended: false // このプレイで endGame を既に処理したか（多重終了防止。START/RETRY でリセット）
 };
+
+// ===================================
+// Phase 11: ウェーブ / ボス / イベント 状態（単一情報源）
+//   ボスとイベントの state はここ一箇所で管理する（二重定義禁止）。
+//   時間は controller(wave-controller) が deltaTime で進める（setInterval 不使用）。
+//   pause 中は RAF 停止でループ自体が止まるため、ここの時間も自動で凍結する。
+// ===================================
+export const waveState = {
+    enabled: false, // ウェーブ機能が有効か（Endless/TimeAttack/Hardcore=自動進行 / Training=手動）
+    manual: false, // Training の手動制御（自動でウェーブを進めない）
+    cycle: 1, // サイクル番号（Endless はボス撃破後に +1）
+    index: 0, // WAVE_SEQUENCE のインデックス（0..4）
+    waveNumber: 1, // 表示用ウェーブ番号（1..5）
+    waveType: 'normal', // 現ウェーブの主役障害物種別
+    phase: 'intro', // 'intro'|'active'|'outro'|'intermission'|'boss-warning'|'boss'|'boss-defeated'
+    phaseTime: 0, // 現フェーズの経過秒
+    bossActive: false, // ボス戦中か（loop の通常 spawn 抑止に使用）
+    // ボス（boss フェーズ中のみ非 null）
+    boss: null, // { type, hp, maxHp, x, y, width, height, dir, timers..., flash }
+    // イベント（同時に1つのみ。非 null = 進行中）
+    event: null, // { id, name, remaining, total, warning, started }
+    eventCooldown: 0, // 次イベントまでのクールタイム（秒）
+    eventRestore: null // イベント終了時に元へ戻す値のスナップショット
+};
+
+// ウェーブ/ボス/イベント状態を初期化する（START / RETRY / モード変更で完全リセット）。
+export function resetWaveState() {
+    waveState.enabled = false;
+    waveState.manual = false;
+    waveState.cycle = 1;
+    waveState.index = 0;
+    waveState.waveNumber = 1;
+    waveState.waveType = 'normal';
+    waveState.phase = 'intro';
+    waveState.phaseTime = 0;
+    waveState.bossActive = false;
+    waveState.boss = null;
+    waveState.event = null;
+    waveState.eventCooldown = 0;
+    waveState.eventRestore = null;
+}
 
 // すべてのゲームデータ状態を初期化する（START / RETRY 用）。
 // 副作用（エラークリア・リーダーボードUI）は呼び出し側 controller が担当する。
@@ -179,6 +235,21 @@ export function resetState() {
     gameState.invincible = false;
     gameState.allowedObstacles = 'all';
     gameState.runStartedAtMs = Date.now();
+
+    // Phase 11: ウェーブ／イベント補正と統計を中立値へ（イベント効果の取り残しを防ぐ）。
+    gameState.waveSpeedBonus = 0;
+    gameState.eventSpeedMult = 1;
+    gameState.eventCoreMult = 1;
+    gameState.darkZone = false;
+    gameState.laserStorm = false;
+    gameState.waveReached = 1;
+    gameState.bossReached = 0;
+    gameState.bossDefeated = 0;
+    gameState.powerupsCollected = 0;
+    gameState.deathCause = 'unknown';
+
+    // Phase 11: ウェーブ／ボス／イベント状態を完全リセット。
+    resetWaveState();
 
     // 障害物やプレイヤーの状態をリセット（配列は in-place クリア）
     obstacles.length = 0;

@@ -2,9 +2,18 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>避けろ！サイバーランナー</title>
-    <link rel="icon" href="data:,">
+    <!-- Phase 12: PWA（GitHub Pages サブパスで動く相対参照） -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0a0e27">
+    <meta name="description" content="未来都市を駆け抜け、ウェーブ・ボス・イベントを越えてハイスコアを狙うブラウザランゲーム。">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Cyber Runner">
+    <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -53,6 +62,7 @@
                                 <option value="none">なし</option>
                             </select>
                         </label>
+                        <p class="balance-info" id="balanceInfo"></p>
                     </div>
                 </div>
                 <p class="mission-preview" id="titleMission"></p>
@@ -91,14 +101,48 @@
             </div>
             <canvas id="gameCanvas" width="800" height="600"></canvas>
             <div class="training-panel" id="trainingPanel" style="display:none;">
-                <span class="training-panel-label">TRAINING — パワーアップ確認:</span>
-                <button type="button" class="btn btn-small tr-pu" data-pu="shield">SHIELD</button>
-                <button type="button" class="btn btn-small tr-pu" data-pu="slow">SLOW</button>
-                <button type="button" class="btn btn-small tr-pu" data-pu="bonus">BONUS</button>
-                <button type="button" class="btn btn-small tr-pu" data-pu="magnet">MAGNET</button>
-                <button type="button" class="btn btn-small tr-pu" data-pu="bomb">BOMB</button>
-                <button type="button" class="btn btn-small tr-pu" data-pu="double">DOUBLE</button>
-                <button type="button" class="btn btn-small tr-pu" data-pu="dashcharge">DASH</button>
+                <div class="training-row">
+                    <span class="training-panel-label">PWR:</span>
+                    <button type="button" class="btn btn-small tr-pu" data-pu="shield">SHIELD</button>
+                    <button type="button" class="btn btn-small tr-pu" data-pu="slow">SLOW</button>
+                    <button type="button" class="btn btn-small tr-pu" data-pu="bonus">BONUS</button>
+                    <button type="button" class="btn btn-small tr-pu" data-pu="magnet">MAGNET</button>
+                    <button type="button" class="btn btn-small tr-pu" data-pu="bomb">BOMB</button>
+                    <button type="button" class="btn btn-small tr-pu" data-pu="double">DOUBLE</button>
+                    <button type="button" class="btn btn-small tr-pu" data-pu="dashcharge">DASH</button>
+                </div>
+                <div class="training-row">
+                    <span class="training-panel-label">WAVE:</span>
+                    <button type="button" class="btn btn-small tr-wave" data-wave="normal">W1</button>
+                    <button type="button" class="btn btn-small tr-wave" data-wave="homing">W2</button>
+                    <button type="button" class="btn btn-small tr-wave" data-wave="laser">W3</button>
+                    <button type="button" class="btn btn-small tr-wave" data-wave="gapwall">W4</button>
+                </div>
+                <div class="training-row">
+                    <span class="training-panel-label">BOSS:</span>
+                    <button type="button" class="btn btn-small tr-boss" data-boss="firewall">FIREWALL</button>
+                    <button type="button" class="btn btn-small tr-boss" data-boss="worm">WORM</button>
+                    <button type="button" class="btn btn-small tr-boss" data-boss="gate">GATE</button>
+                </div>
+                <div class="training-row">
+                    <span class="training-panel-label">EVENT:</span>
+                    <button type="button" class="btn btn-small tr-event" data-event="core_rush">CORE RUSH</button>
+                    <button type="button" class="btn btn-small tr-event" data-event="double_score">2X SCORE</button>
+                    <button type="button" class="btn btn-small tr-event" data-event="high_speed">HI-SPEED</button>
+                    <button type="button" class="btn btn-small tr-event" data-event="dark_zone">DARK</button>
+                    <button type="button" class="btn btn-small tr-event" data-event="laser_storm">LASER STORM</button>
+                </div>
+            </div>
+            <!-- Phase 12: モバイル操作（オンスクリーンボタン）。タッチ端末で初期表示。 -->
+            <div class="touch-controls" id="touchControls" style="display:none;">
+                <div class="touch-left-group">
+                    <button type="button" class="touch-btn" id="touchLeft" aria-label="左へ移動" aria-pressed="false">◀</button>
+                    <button type="button" class="touch-btn" id="touchRight" aria-label="右へ移動" aria-pressed="false">▶</button>
+                </div>
+                <div class="touch-right-group">
+                    <button type="button" class="touch-btn touch-pause" id="touchPause" aria-label="一時停止" aria-pressed="false">❚❚</button>
+                    <button type="button" class="touch-btn touch-dash" id="touchDash" aria-label="ダッシュ" aria-pressed="false">DASH</button>
+                </div>
             </div>
         </div>
 
@@ -202,6 +246,27 @@
                     <span>操作説明を表示</span>
                     <input type="checkbox" id="optShowControls">
                 </label>
+                <div class="option-row">
+                    <label for="optTouchControls">画面の操作ボタン</label>
+                    <select id="optTouchControls" class="option-select" aria-describedby="touchControlsNote">
+                        <option value="auto">AUTO（端末で自動）</option>
+                        <option value="on">ON（常に表示）</option>
+                        <option value="off">OFF（常に非表示）</option>
+                    </select>
+                </div>
+                <p class="option-note" id="touchControlsNote">
+                    AUTO=タッチ端末で自動表示／ON=常に表示／OFF=常に非表示。キーボードでも操作できます。
+                </p>
+                <label class="option-row">
+                    <span>匿名プレイ分析を許可する</span>
+                    <input type="checkbox" id="optAnalyticsConsent">
+                </label>
+                <p class="option-note" id="analyticsNote">
+                    バランス改善のため、1プレイ終了時にスコア・到達ウェーブ・終了原因などの匿名の要約を送信します。
+                    プレイヤー名・メール・位置情報など個人を特定する情報は収集しません。
+                    OFF（既定）でも全てのゲーム機能を利用でき、いつでも変更できます。
+                    詳細は docs/ANALYTICS_PRIVACY.md を参照してください。
+                </p>
                 <button id="optionsBackBtn" class="btn btn-primary">BACK</button>
             </div>
         </div>
@@ -266,6 +331,13 @@
 
         <!-- 実績解除トースト通知（Phase 5） -->
         <div id="toastContainer" class="toast-container"></div>
+
+        <!-- Phase 12: PWA 更新通知（新バージョン検出時のみ表示。プレイ中は自動リロードしない） -->
+        <div id="updateBanner" class="update-banner" role="status" aria-live="polite" hidden>
+            <span>新しいバージョンがあります。</span>
+            <button id="updateApplyBtn" class="btn btn-small">更新</button>
+            <button id="updateDismissBtn" class="btn btn-small btn-secondary" aria-label="更新通知を閉じる">×</button>
+        </div>
     </div>
 
     <script type="module" src="./js/main.js"></script>

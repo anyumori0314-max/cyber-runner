@@ -163,3 +163,31 @@
 15. エラーオーバーレイ表示とループ挙動
 16. HiDPI（devicePixelRatio）描画、SOUND トグル
 17. **スコア計算仕様**（生存スコアの差分加算 + 加算スコア累積 + 合成、倍率低下でも非減少）が変化していないこと
+
+---
+
+## 7. Phase 11〜13 のベストプラクティス（ゲーム拡張）
+
+`scripts/verify.mjs` は Phase 11〜13 を含め **107 件**（Phase 11:12 / Phase 12:10 / Phase 13:12 を追加）。
+`npm test` / `npm run verify` で全件 PASS、`git diff --check` clean を維持する。
+
+### 単一 RAF / deltaTime / pause 凍結（Phase 11）
+- ボス・イベント・ウェーブ進行は **専用 RAF を作らない**。`game-loop` の単一ループから `updateWaveSystem(delta)` を呼ぶ。
+- 時間は **すべて deltaTime 駆動**（`setInterval` でゲーム時間を管理しない）。pause は RAF 停止で全タイマーが自動凍結。
+- ボス/イベントの状態は `state.waveState` に**一元管理**（二重定義禁止）。RETRY/モード変更は `resetWaveState` で完全リセット。
+- イベント終了時は**スナップショット復元**で速度/倍率/出現率/描画状態を正確に戻す。DOUBLE SCORE は新規加算のみ・過去スコア非減少。
+- ボスは安全地帯/最小通過幅/警告時間を**必ず確保**（Hardcore でも回避不能化しない）。同時レーザー/追尾数に上限。
+
+### モバイル / PWA（Phase 12）
+- タッチは **Pointer Events + pointer capture**。`pointercancel`/`lostpointercapture`/`visibilitychange` で入力残りを防ぐ。
+  キーボードと同じ `player` フラグを更新して共存。操作ボタンは 44px↑・`aria-label`・押下表示（色のみに依存しない）。
+- SW は **バージョン付きキャッシュ**・HTML network-first・静的 SWR。**Supabase/POST/start-run/submit-score/challenges/analytics は非キャッシュ**。
+  更新はユーザー操作で適用（プレイ中は自動リロードしない）。SW 失敗でも通常版で起動。
+- すべて相対参照（GitHub Pages サブパス対応）。`prefers-reduced-motion`/高コントラスト/`:focus-visible`/safe-area を尊重。
+
+### 分析 / バランス（Phase 13）
+- 分析は **初期 OFF・明示同意のみ**。Training/Replay/オフラインは送らない。1 プレイ 1 件・**無断再送なし**・ゲーム非影響（fire-and-forget）。
+- payload に**個人情報を含めない**（player_name/IP/user_id/run_id 等は client でも server でも拒否）。検証は Deno/Node 共有の純粋関数。
+- Supabase は **public SELECT 禁止・anon/auth 書込禁止・service_role のみ**。CHECK 制約・event_id 一意・**生 IP 列なし**（rate-limit は salt 付き hash）。
+- バランスは **`BALANCE_VERSION` 付き preset を単一参照**。既存数値は無断変更せず現在値を既定 preset へ移行。ランキング影響変更は版を上げ `BALANCE_GUIDE.md` に明記。
+- **本番 migration 適用・Function deploy・本番 INSERT は行わない**（コードと手順のみ）。秘密情報はフロント/ファイルに保存しない。

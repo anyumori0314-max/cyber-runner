@@ -9,11 +9,14 @@
 //   ctx は外部（controller）から引数で受け取る。DOM は触らない（HUD は hud.js）。
 // ===================================
 
-import { CANVAS_WIDTH, CANVAS_HEIGHT, COMBO_TIMEOUT, COMBO_WARNING_SECONDS } from '../config.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, COMBO_TIMEOUT, COMBO_WARNING_SECONDS, EVENT_DARK_ZONE_RADIUS } from '../config.js';
 import { player, obstacles, powerUps, energyCores, particles, popups, gameState } from '../state.js';
 import { getOptions } from '../model/options.js';
 import { getActive as getActiveCosmetics } from '../model/cosmetics.js';
 import { getGhostDisplayX } from '../model/replay.js';
+import { drawWaveOverlay } from './wave-view.js';
+import { drawBossOverlay } from './boss-view.js';
+import { drawEventOverlay } from './event-view.js';
 
 // Phase 8: 移動軌跡の位置履歴（描画専用・ゲーム状態とは独立）。
 const trailHistory = [];
@@ -152,9 +155,47 @@ export function drawScene(ctx) {
     }
     ctx.restore();
 
+    // Phase 11: DARK ZONE（視界制限）。エンティティの上から暗幕をかけ、危険（レーザー）と
+    //   プレイヤー位置は必ず見えるように再描画する（安全のため・色のみに依存しない）。
+    drawDarkZone(ctx);
+
+    // Phase 11: ウェーブ / ボス / イベント演出（暗幕の上＝常に見える）。
+    drawBossOverlay(ctx);
+    drawWaveOverlay(ctx);
+    drawEventOverlay(ctx);
+
     // 演出オーバーレイ（揺れの影響を受けない）
     drawComboWarning(ctx);
     drawCountdown(ctx);
+}
+
+// Phase 11: DARK ZONE の暗幕（プレイヤー周囲だけ視界を残す）。
+function drawDarkZone(ctx) {
+    if (!gameState.darkZone) return;
+    const cx = player.x + player.width / 2;
+    const cy = player.y + player.height / 2;
+    const r = EVENT_DARK_ZONE_RADIUS;
+    ctx.save();
+    const grad = ctx.createRadialGradient(cx, cy, r * 0.35, cx, cy, r);
+    grad.addColorStop(0, 'rgba(2,2,14,0)');
+    grad.addColorStop(1, 'rgba(2,2,14,0.92)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.restore();
+    // 危険（レーザー）は暗闇でも視認できるよう再描画する。
+    for (const ob of obstacles) {
+        if (ob.type === 'laser') ob.draw(ctx);
+    }
+    // プレイヤー位置リング（形状で示す）。
+    ctx.save();
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#00ffff';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
 }
 
 // コンボ終了 約1秒前の点滅警告。

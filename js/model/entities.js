@@ -541,3 +541,60 @@ export class GapWall {
         return !insideGap;
     }
 }
+
+// ===================================
+// BossWeakPoint — ボスの弱点ノード（Phase 11 / Data Worm 用）。
+//   プレイヤーは画面下で左右移動のみのため、ボス本体には触れられない。
+//   ボスが落としたこのノードへ「ダッシュ中（無敵中）に接触」するとダメージを与えられ、
+//   通常接触はプレイヤー側の失敗（衝突）として扱う。判定は controller(game-loop) が行う。
+//   obstacles[] に入れて運用（update / isOutOfBounds / collidesWith / draw）。
+// ===================================
+export class BossWeakPoint {
+    constructor(cx) {
+        this.type = 'weakpoint';
+        this.width = 32;
+        this.height = 32;
+        const center = Number.isFinite(cx) ? cx : CANVAS_WIDTH / 2;
+        this.x = Math.max(0, Math.min(CANVAS_WIDTH - this.width, center - this.width / 2));
+        this.y = -this.height;
+        this.speed = 150; // ゆっくり落下（ダッシュで狙いやすい速度）
+        this.bossWeakPoint = true;
+        this.nearMissEligible = false;
+        this.nearMissed = false;
+        this.rotation = 0;
+    }
+    update(delta) {
+        if (!delta) return;
+        this.y += this.speed * delta;
+        this.rotation += delta * 4;
+    }
+    draw(ctx) {
+        const cx = this.x + this.width / 2;
+        const cy = this.y + this.height / 2;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(this.rotation);
+        // 二重ひし形のターゲット（ダッシュで狙う弱点。形で区別＝色のみに依存しない）
+        ctx.strokeStyle = '#ffffff';
+        ctx.fillStyle = '#00e5ff';
+        ctx.shadowColor = '#00e5ff';
+        ctx.shadowBlur = 18;
+        ctx.lineWidth = 2;
+        const s = this.width / 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -s); ctx.lineTo(s, 0); ctx.lineTo(0, s); ctx.lineTo(-s, 0); ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, -s / 2); ctx.lineTo(s / 2, 0); ctx.lineTo(0, s / 2); ctx.lineTo(-s / 2, 0); ctx.closePath();
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.restore();
+    }
+    isOutOfBounds() {
+        return this.y > CANVAS_HEIGHT;
+    }
+    collidesWith(player) {
+        return intersects(this, player);
+    }
+}

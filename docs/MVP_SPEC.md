@@ -267,3 +267,31 @@
 15. エラーオーバーレイ表示とループ挙動
 16. HiDPI（devicePixelRatio）描画、SOUND トグル
 17. **スコア計算仕様**（生存点の差分加算 + 加算スコア累積 + 合成、コンボ倍率低下でも非減少）が変化していないこと
+
+---
+
+## 10. Phase 11〜13 追補（ゲーム拡張）
+
+> §8「MVP対象外」のうち**モバイル/タッチ操作・リプレイ**は実装済み（Phase 10/12）。
+> 正式な進捗・検証基準は [PHASE_11_13_PROGRESS.md](./PHASE_11_13_PROGRESS.md)。
+
+### Phase 11（ウェーブ / イベント / ボス）
+- ウェーブ列 Wave1（通常）→2（追尾）→3（レーザー）→4（隙間壁）→5（ボス）。状態機械 intro→active→outro→intermission。
+- Endless は撃破でサイクル進行（難易度段階上昇・ボス HP 増）。Time Attack は 60 秒優先（ボス中でも残り0で FINISH）。
+  Hardcore はウェーブ短縮・ボス間隔短縮（警告・最小通過幅は維持＝回避不能化しない）。Training は任意 Wave/Boss/Event を手動確認。
+- ボス: Firewall Core / Data Worm / Security Gate（HP バー・警告・撃破演出・安全地帯/最小通過幅を保証）。
+- イベント（同時1つ）: CORE RUSH / DOUBLE SCORE / HIGH SPEED / DARK ZONE / LASER STORM。pause 凍結・RETRY/モード変更で解除・終了で完全復元。
+- 単一 RAF / deltaTime / pause 凍結を維持（専用 RAF・`setInterval` 不使用）。設定値は config（Phase 13 で balance preset へ集約）。
+
+### Phase 12（モバイル操作 / PWA）
+- オンスクリーン操作（左/右/ダッシュ/一時停止・Pointer Events・44px↑・マルチタッチ・aria-label・キーボード共存・visibilitychange 解除）。
+  表示は 'auto'（タッチ端末で初期 ON / PC で初期 OFF）。
+- PWA: manifest（standalone・相対）/ SW（versioned cache・HTML network-first・静的 SWR・API/POST/Supabase 非キャッシュ・SKIP_WAITING）/
+  offline.html / 192・512・maskable アイコン。更新はユーザー操作・プレイ中は自動リロードしない。オフラインで Endless/Training 起動可。
+- アクセシビリティ: prefers-reduced-motion / 高コントラスト / :focus-visible / safe-area-inset / 横スクロールなし。
+
+### Phase 13（匿名分析 / バランス管理）
+- 分析は初期 OFF。明示同意でのみ 1 プレイ 1 件の匿名要約を送信（Training/Replay/オフラインは送らない・無断再送なし・ゲーム非影響）。
+  収集項目は要約のみ・個人情報なし。Supabase は RLS（public SELECT 禁止・service_role のみ書込）・CHECK・event_id 一意・生 IP 列なし。
+- バランスは `BALANCE_VERSION` 付き preset で一元管理（現在値を既定 preset へ移行＝挙動不変）。各プレイの分析へ balance_version を記録。
+- 本番 migration 適用・Function deploy・INSERT は未実施（コードと手順のみ）。

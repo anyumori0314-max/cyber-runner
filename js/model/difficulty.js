@@ -31,7 +31,10 @@ export function updateDifficulty(gameState) {
     const diffMul = typeof gameState.difficultyMultiplier === 'number' && gameState.difficultyMultiplier > 0
         ? gameState.difficultyMultiplier
         : 1;
-    gameState.speed = gameState.baseSpeed * (gameState.slowFactor || 1) * diffMul;
+    // Phase 11: サイクル難易度（加算係数）とイベント速度倍率（HIGH SPEED）。未設定は中立値。
+    const waveBonus = Number.isFinite(gameState.waveSpeedBonus) && gameState.waveSpeedBonus > 0 ? gameState.waveSpeedBonus : 0;
+    const eventMul = typeof gameState.eventSpeedMult === 'number' && gameState.eventSpeedMult > 0 ? gameState.eventSpeedMult : 1;
+    gameState.speed = gameState.baseSpeed * (gameState.slowFactor || 1) * diffMul * (1 + waveBonus) * eventMul;
 
     // 障害物出現率を増やす
     const spawnIncrease = (gameState.gameTime / 60) * (MAX_SPAWN_RATE - INITIAL_SPAWN_RATE);

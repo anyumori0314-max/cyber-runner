@@ -24,9 +24,20 @@ let refs = {
     trSpeed: null,
     trObstacles: null,
     trainingPanel: null, // ゲーム中の Training 操作パネル
-    trPuButtons: [] // パワーアップ確認ボタン（data-pu）
+    trPuButtons: [], // パワーアップ確認ボタン（data-pu）
+    // Phase 11: Training の Wave / Boss / Event 確認ボタン
+    trWaveButtons: [], // data-wave
+    trBossButtons: [], // data-boss
+    trEventButtons: [] // data-event
 };
-let callbacks = { onSpawnPreview: () => {}, onModeChange: () => {} };
+let callbacks = {
+    onSpawnPreview: () => {},
+    onModeChange: () => {},
+    // Phase 11: Training の Wave / Boss / Event 開始コールバック
+    onTrainingWave: () => {},
+    onTrainingBoss: () => {},
+    onTrainingEvent: () => {}
+};
 let bound = false;
 
 export function configureModeSelectView(elements, cb = {}) {
@@ -76,6 +87,16 @@ function bindEvents() {
     if (refs.trObstacles) refs.trObstacles.addEventListener('change', () => setTrainingSetting('obstacles', refs.trObstacles.value));
     (refs.trPuButtons || []).forEach((btn) => {
         btn.addEventListener('click', () => callbacks.onSpawnPreview(btn.dataset.pu));
+    });
+    // Phase 11: Training の Wave / Boss / Event 確認ボタン。
+    (refs.trWaveButtons || []).forEach((btn) => {
+        btn.addEventListener('click', () => callbacks.onTrainingWave(btn.dataset.wave));
+    });
+    (refs.trBossButtons || []).forEach((btn) => {
+        btn.addEventListener('click', () => callbacks.onTrainingBoss(btn.dataset.boss));
+    });
+    (refs.trEventButtons || []).forEach((btn) => {
+        btn.addEventListener('click', () => callbacks.onTrainingEvent(btn.dataset.event));
     });
 }
 

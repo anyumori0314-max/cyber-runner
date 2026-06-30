@@ -38,9 +38,17 @@ import {
     particles,
     popups,
     loopState,
+    waveState,
     resetState,
     updateHighScore
 } from '../state.js';
+import {
+    initWaveSystem,
+    updateWaveSystem,
+    applyBossDamage,
+    wormHitReady,
+    markWormHit
+} from './wave-controller.js';
 import {
     Obstacle,
     PowerUp,
@@ -87,6 +95,7 @@ import { showToast, renderAchievements } from '../view/achievements-view.js';
 import { setTrainingPanelVisible } from '../view/mode-select-view.js';
 import { clearPlayerName, updateSendScoreButton, setLeaderboardStatus, setScoreSubmitVisible } from '../view/leaderboard-view.js';
 import { clearKeys } from './input.js';
+import { clearTouch } from './touch-input.js';
 import { AudioManager } from '../audio/audio-manager.js';
 import { handleGameError, clearError } from '../util/errors.js';
 import { prepareSubmission, loadLeaderboard, resetLeaderboardSubmission } from '../services/leaderboard.js';
@@ -123,6 +132,8 @@ export function prepareMission() {
 // データ状態は state.resetState() に委譲し、横断的関心（エラー / リーダーボードUI）をここで初期化。
 export function resetAllState() {
     resetState();
+    // 多重終了ガードを解除（新しいプレイでは endGame を再び1回だけ処理する）。
+    loopState.ended = false;
     // 既存のエラーはクリア（lastError リセット + オーバーレイ除去）
     clearError();
     resetLeaderboardSubmission();
@@ -134,6 +145,9 @@ export function resetAllState() {
 export function startGame() {
     // 残っているオーバーレイ（ポーズ等）を閉じる
     hideAllOverlays();
+    // Phase 12: 押しっぱなしのキー/タッチ入力を解除（RETRY で入力が残らない）。
+    clearKeys();
+    clearTouch();
 
     // 既存のループがあれば停止してから再開（多重起動防止）
     if (loopState.rafId) {
@@ -149,6 +163,9 @@ export function startGame() {
 
     // Phase 7: 選択中モード（+ Training 設定）を反映（resetAllState の既定値を上書き）。
     applyModeToState(gameState);
+
+    // Phase 11: ウェーブ／ボス／イベントを初期化（モード反映後＝Training は手動制御）。
+    initWaveSystem();
 
     // ミッションが未割り当てなら新規に選ぶ（タイトルプレビューがあればそれを引き継ぐ）
     if (!gameState.mission) prepareMission();
@@ -195,6 +212,7 @@ export function pauseGame() {
         loopState.rafId = null;
     }
     clearKeys(); // 押しっぱなしキーの暴走を防ぐ
+    clearTouch(); // 押しっぱなしタッチも解除
     showPauseScreen();
 }
 
@@ -221,6 +239,7 @@ export function backToTitle() {
     hideAllOverlays();
     setTrainingPanelVisible(false);
     clearKeys();
+    clearTouch();
     showTitleScreen();
 }
 
@@ -288,12 +307,20 @@ function checkNearMiss(ob) {
 
 // ゲーム終了（RAF 停止 → ハイスコア保存 → 結果表示 → 実績/称号 → 送信準備 → リーダーボード読込 → 画面遷移）。
 export function endGame(opts = {}) {
+    // 多重終了の防止: 複数経路（衝突・FINISH・終了ボタン等）から呼ばれても、1プレイにつき
+    //   集計・XP・ミッション・分析送信・スコア送信・リプレイ保存・GAME OVER UI は1回だけ。
+    //   フラグは START / RETRY（resetAllState）で解除する。タイムアタックの FINISH も同経路。
+    if (loopState.ended) return;
+    loopState.ended = true;
+
     const finished = opts.finished === true; // タイムアタックの FINISH（時間切れ）
     const isTraining = gameState.mode === 'training';
 
     // ループを停止
     stopLoop();
     gameState.isPaused = false;
+    // Phase 13: プレイ時間（duration_ms 計測。onRunComplete と送信で共有）。
+    const durationMs = Math.max(0, Date.now() - (gameState.runStartedAtMs || Date.now()));
     hideAllOverlays();
     setTrainingPanelVisible(false); // Training パネルを閉じる
     clearActiveGhost(); // 表示用ゴーストを解除
@@ -383,13 +410,19 @@ export function endGame(opts = {}) {
             reachedLevel: gameState.level,
             missionCompleted: gameState.missionDone === true,
             newlyAchievements: newly.length,
-            finished
+            finished,
+            // Phase 13: 分析用の追加サマリ（個人情報なし）。
+            durationMs,
+            deathCause: finished ? 'finish' : gameState.deathCause,
+            waveReached: gameState.waveReached,
+            bossReached: gameState.bossReached,
+            bossDefeated: gameState.bossDefeated,
+            powerupsCollected: gameState.powerupsCollected
         });
     }
 
     // Phase 6: 送信対象データを確定（mode/duration/metrics/runId を含む）。
     if (!isTraining) {
-        const durationMs = Math.max(0, Date.now() - (gameState.runStartedAtMs || Date.now()));
         const run = getCurrentRunSync();
         prepareSubmission({
             score: finalScore,
@@ -474,6 +507,7 @@ function loop(timestamp) {
         // Phase 7: タイムアタックの時間切れ → FINISH（GAME OVER ではなく完走扱い）
         if (gameState.timeLimitSec > 0 && gameState.gameTime >= gameState.timeLimitSec) {
             gameState.gameTime = gameState.timeLimitSec;
+            gameState.deathCause = 'finish';
             endGame({ finished: true });
             return;
         }
@@ -512,26 +546,40 @@ function loop(timestamp) {
 
         // 新しい障害物 / パワーアップ / エネルギーコアを生成
         // Phase 7: Training の障害物種別（all=通常 / basic=基本のみ / none=出さない）。
+        // Phase 11: 通常 spawn はウェーブ 'active' 中のみ（intro/休憩/ボス中は抑止して演出・ボス戦を明確化）。
+        const spawnsAllowed = !waveState.enabled || waveState.phase === 'active';
         const obstaclesOn = gameState.allowedObstacles !== 'none';
         const specialsOn = gameState.allowedObstacles === 'all';
-        if (obstaclesOn && shouldSpawn(gameState.spawnRate, delta)) {
+        if (spawnsAllowed && obstaclesOn && shouldSpawn(gameState.spawnRate, delta)) {
             obstacles.push(new Obstacle(gameState));
         }
         // Phase 4: レベル別の新障害物（それぞれ専用の出現率。Training basic/none では出さない）
-        if (specialsOn && gameState.level >= LASER_START_LEVEL && shouldSpawn(LASER_SPAWN_RATE, delta)) {
+        if (spawnsAllowed && specialsOn && gameState.level >= LASER_START_LEVEL && shouldSpawn(LASER_SPAWN_RATE, delta)) {
             obstacles.push(new WarningLaser());
         }
-        if (specialsOn && gameState.level >= HOMING_START_LEVEL && shouldSpawn(HOMING_SPAWN_RATE, delta)) {
+        if (spawnsAllowed && specialsOn && gameState.level >= HOMING_START_LEVEL && shouldSpawn(HOMING_SPAWN_RATE, delta)) {
             obstacles.push(new HomingObstacle(gameState));
         }
-        if (specialsOn && gameState.level >= GAPWALL_START_LEVEL && shouldSpawn(GAPWALL_SPAWN_RATE, delta)) {
+        if (spawnsAllowed && specialsOn && gameState.level >= GAPWALL_START_LEVEL && shouldSpawn(GAPWALL_SPAWN_RATE, delta)) {
             obstacles.push(new GapWall(gameState));
         }
-        if (shouldSpawn(gameState.powerupSpawnRate, delta)) {
+        if (spawnsAllowed && shouldSpawn(gameState.powerupSpawnRate, delta)) {
             powerUps.push(new PowerUp(gameState, pickWeightedPowerUpType()));
         }
-        if (shouldSpawn(gameState.energyCoreSpawnRate, delta)) {
+        // Phase 11: CORE RUSH のコア出現倍率。ボス戦中は通常コアを止める（Firewall が供給する）。
+        const coreRate = gameState.energyCoreSpawnRate * (gameState.eventCoreMult || 1);
+        if (spawnsAllowed && !waveState.bossActive && shouldSpawn(coreRate, delta)) {
             energyCores.push(new EnergyCore(gameState));
+        }
+
+        // Phase 11: ウェーブ／ボス／イベントを更新（ボス攻撃の spawn・イベント効果・進行）。
+        //   deltaTime 駆動で進み、pause 中はループ停止により自動凍結する（専用 RAF は作らない）。
+        const waveResult = updateWaveSystem(delta);
+        if (waveResult.playerKilled) {
+            gameState.deathCause = 'boss';
+            triggerShake(14, 0.4);
+            endGame();
+            return;
         }
 
         // Phase 7: Training の無敵はダッシュ無敵と同様に衝突をすり抜ける。
@@ -545,6 +593,11 @@ function loop(timestamp) {
 
             // 画面外に出た障害物を削除
             if (ob.isOutOfBounds()) {
+                // Phase 11: Security Gate の隙間壁を通過しきった = ボスへ 1 ダメージ（1壁1回）。
+                if (ob.bossGate && !ob.gateScored && waveState.boss && waveState.boss.type === 'gate' && waveState.phase === 'boss') {
+                    ob.gateScored = true;
+                    applyBossDamage(1);
+                }
                 obstacles.splice(i, 1);
                 continue;
             }
@@ -554,6 +607,15 @@ function loop(timestamp) {
 
             // プレイヤーとの衝突判定
             if (ob.collidesWith(player)) {
+                // Phase 11: Data Worm の弱点ノードへダッシュ中（無敵中）に接触 → ボスへダメージ。
+                if (ob.bossWeakPoint && gameState.gameTime < gameState.dashInvulnUntil) {
+                    if (wormHitReady()) {
+                        applyBossDamage(1);
+                        markWormHit();
+                    }
+                    obstacles.splice(i, 1);
+                    continue;
+                }
                 if (dashInvuln) {
                     // ダッシュ無敵中はすり抜ける（障害物は残す）
                     continue;
@@ -569,6 +631,10 @@ function loop(timestamp) {
                     AudioManager.play('pickup');
                     continue;
                 }
+                // Phase 13: 終了原因を記録（分析用。weakpoint への通常接触はボス扱い）。
+                gameState.deathCause = ob.type === 'weakpoint'
+                    ? 'boss'
+                    : (['laser', 'homing', 'gapwall'].includes(ob.type) ? ob.type : 'obstacle');
                 triggerShake(14, 0.4);
                 endGame();
                 return;
@@ -592,6 +658,7 @@ function loop(timestamp) {
                     particles,
                     particlesEnabled: getOptions().particlesEnabled
                 });
+                gameState.powerupsCollected++; // Phase 11/13: パワーアップ取得数（分析・balance 用）
                 powerUps.splice(i, 1);
                 AudioManager.play('pickup');
             }
@@ -624,6 +691,10 @@ function loop(timestamp) {
                 addCoreScore(gameState);
                 registerComboHit(gameState);
                 gameState.coreCount++; // ミッション/実績/称号用
+                // Phase 11: Firewall Core 戦中はコア取得でボス HP を減らす。
+                if (waveState.boss && waveState.boss.type === 'firewall' && waveState.phase === 'boss') {
+                    applyBossDamage(1);
+                }
                 if (getOptions().particlesEnabled) {
                     // Phase 8: コア取得エフェクト（外観のみ。色/数だけ変える）。
                     const fx = getActiveCosmetics();
