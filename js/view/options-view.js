@@ -14,10 +14,25 @@ let refs = {
     soundVolume: null,
     screenShake: null,
     particles: null,
-    showControls: null
+    showControls: null,
+    touchControls: null // Phase 12
 };
 let applyEffect = () => {};
 let bound = false;
+
+// Phase 12（Phase 13 修正）: 操作ボタン設定は三状態。<select> の値（'auto'|'on'|'off'）と
+//   モデル値（'auto'|true|false）を相互変換する。UI は実際の三状態をそのまま表示する
+//   （端末判定で見かけ上 ON/OFF を偽装しない）。
+function touchSelectToOption(v) {
+    if (v === 'on') return true;
+    if (v === 'off') return false;
+    return 'auto';
+}
+function touchOptionToSelect(v) {
+    if (v === true) return 'on';
+    if (v === false) return 'off';
+    return 'auto';
+}
 
 export function configureOptionsView(elements, onApply) {
     refs = { ...refs, ...elements };
@@ -34,6 +49,8 @@ export function renderOptions() {
     if (refs.screenShake) refs.screenShake.checked = o.screenShakeEnabled;
     if (refs.particles) refs.particles.checked = o.particlesEnabled;
     if (refs.showControls) refs.showControls.checked = o.showControls;
+    // Phase 13 修正: 三状態 select に実際の状態（auto/on/off）を反映。
+    if (refs.touchControls) refs.touchControls.value = touchOptionToSelect(o.touchControls);
 }
 
 function commit(key, value) {
@@ -51,4 +68,6 @@ function bindEvents() {
     if (refs.screenShake) refs.screenShake.addEventListener('change', () => commit('screenShakeEnabled', refs.screenShake.checked));
     if (refs.particles) refs.particles.addEventListener('change', () => commit('particlesEnabled', refs.particles.checked));
     if (refs.showControls) refs.showControls.addEventListener('change', () => commit('showControls', refs.showControls.checked));
+    // Phase 13 修正: 三状態 select。選択値を 'auto'|true|false へ変換して保存する。
+    if (refs.touchControls) refs.touchControls.addEventListener('change', () => commit('touchControls', touchSelectToOption(refs.touchControls.value)));
 }

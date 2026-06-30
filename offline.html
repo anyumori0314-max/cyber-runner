@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>オフライン — サイバーランナー</title>
+    <link rel="icon" href="./assets/icons/icon.svg" type="image/svg+xml">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: #0a0e27;
+            color: #e8f6ff;
+            font-family: "Segoe UI", system-ui, sans-serif;
+        }
+        .wrap {
+            min-height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+        h1 { color: #00ff88; text-shadow: 0 0 12px rgba(0,255,136,0.6); }
+        p { max-width: 28rem; line-height: 1.6; }
+        a.btn {
+            display: inline-block;
+            margin-top: 16px;
+            padding: 12px 24px;
+            min-height: 44px;
+            min-width: 44px;
+            box-sizing: border-box;
+            border: 1px solid #00ff88;
+            border-radius: 8px;
+            color: #00ff88;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        a.btn:focus-visible { outline: 3px solid #00eaff; outline-offset: 2px; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>オフラインです</h1>
+        <p>
+            インターネットに接続できません。ゲーム本体（Endless / Training）はオフラインでも遊べます。
+            ランキングの送信はオンライン復帰後に手動で行えます（自動再送はしません）。
+        </p>
+        <a class="btn" href="./index.html">ゲームへ戻る</a>
+    </div>
+</body>
+</html>

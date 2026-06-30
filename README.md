@@ -134,6 +134,38 @@ Phase 1〜5（ゲームプレイ拡張）に続き、プラットフォーム機
 `js/view/{mode-select,profile,cosmetics,challenges,replay,share}-view.js`、`supabase/`（migration + functions）。
 依存方向は従来どおり一方向で、循環依存はありません（再開セッションの静的解析で確認済み）。
 
+## Phase 11〜13：ゲーム拡張
+
+詳細・検証状況・既知の制限は [docs/PHASE_11_13_PROGRESS.md](./docs/PHASE_11_13_PROGRESS.md) が単一の基準です。
+
+- **Phase 11 — ウェーブ / イベント / ボス**: 時間経過だけでなくウェーブ進行（Wave1 通常→2 追尾→3 レーザー→
+  4 隙間壁→5 ボス）で難易度が上がる。Endless は撃破でサイクル進行（難易度段階上昇）。ボス3種（Firewall Core /
+  Data Worm / Security Gate）と5種のランダムイベント（CORE RUSH / DOUBLE SCORE / HIGH SPEED / DARK ZONE /
+  LASER STORM）。**単一 RAF・deltaTime・pause 凍結**を維持（専用 RAF/`setInterval` 不使用）。Training で任意の
+  Wave/Boss/Event を確認可（記録・送信・XP・分析なし）。
+- **Phase 12 — モバイル操作 / PWA**: Pointer Events のオンスクリーン操作（左/右/ダッシュ/一時停止・44px↑・
+  マルチタッチ・`aria-label`）、キーボードと共存。`manifest.webmanifest` + `sw.js` + `offline.html` でホーム画面
+  追加・オフライン起動（GitHub Pages サブパス対応の相対設計）。HTML は network-first、静的は SWR、Supabase/POST/
+  API は非キャッシュ。`prefers-reduced-motion` / 高コントラスト / `:focus-visible` 対応。詳細は
+  [docs/PWA_GUIDE.md](./docs/PWA_GUIDE.md)。
+- **Phase 13 — 匿名分析 / バランス管理**: 明示同意（初期 OFF）のときだけ「1プレイ1件」の匿名要約を送信
+  （Training/Replay/オフラインは送らない・失敗で無断再送なし・ゲームへ影響なし）。個人情報は収集しない。
+  バランス値は `BALANCE_VERSION` 付き preset で一元管理（現在値を既定 preset へ移行＝挙動不変）。
+  **active balance preset が Phase 11 の Wave／Boss／Event のゲーム進行・難易度・時間・倍率・出現率・上限・
+  回避幅すべての単一正本**で、各 Model/Controller/View は `config.js` を直接参照せず `model/balance.js` の
+  アクセサ経由で取得する（config 直接参照は難易度を変えない表示/幾何定数のみ・verify が allowlist で監査）。詳細は
+  [docs/ANALYTICS_PRIVACY.md](./docs/ANALYTICS_PRIVACY.md) / [docs/BALANCE_GUIDE.md](./docs/BALANCE_GUIDE.md) /
+  [docs/ANALYTICS_QUERIES.sql](./docs/ANALYTICS_QUERIES.sql)。**本番 migration 適用・Function deploy・INSERT は未実施**
+  （コードと手順のみ）。
+
+新規ファイル: `js/model/{waves,bosses,random-events,balance,analytics}.js`、`js/controller/{wave-controller,touch-input}.js`、
+`js/services/{pwa-service,analytics-service}.js`、`js/config/balance-presets.js`、
+`js/view/{wave,boss,event}-view.js`、`manifest.webmanifest`、`sw.js`、`offline.html`、`assets/icons/`、
+`supabase/functions/submit-analytics/`、`supabase/functions/_shared/analytics-validation.js`、
+`supabase/migrations/20260628120000_gameplay_analytics.sql`。
+
+> Phase 12 で `.title-buttons` 等に `flex-wrap: wrap` を追加したため、狭いビューポートでの START はみ出し（旧既知問題）は解消しました。
+
 ### 既知の制限（抜粋）
 
 - **既定ビルドはオンライン送信無効**（`EDGE_FUNCTIONS_BASE` 空）。本番 Supabase は未適用（migration 未実行・

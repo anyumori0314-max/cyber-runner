@@ -105,7 +105,9 @@ export const DEFAULT_OPTIONS = {
     soundVolume: 0.8, // 0.0〜1.0（AUDIO_BASE_VOLUME に乗算）
     screenShakeEnabled: true,
     particlesEnabled: true,
-    showControls: true
+    showControls: true,
+    // Phase 12: 画面の操作ボタン。'auto' = タッチ端末で ON / PC で OFF（実体は main が解決）。
+    touchControls: 'auto'
 };
 
 // ====== Phase 3: 演出 ======
@@ -198,3 +200,81 @@ export const REPLAY_DB_NAME = 'cyberRunnerReplays';
 export const REPLAY_STORE_NAME = 'ghosts';
 export const GHOST_SAMPLE_INTERVAL_SEC = 0.1; // ゴースト記録の固定間隔（秒）
 export const GHOST_MAX_SAMPLES = 6000; // 1リプレイの最大サンプル数（容量上限の保険）
+
+// ===================================
+// Phase 11〜13: ゲーム拡張の定数（値はここに集約）
+// ※ Phase 11 のゲームバランス値（ウェーブ/演出/休憩時間・ボス HP・各ボス攻撃間隔・
+//   イベント効果/間隔・Hardcore 補正）は config/balance-presets.js の active preset が
+//   唯一の正本。Wave/Boss/Event の各 model/controller/view はこれらを直接 import せず、
+//   必ず model/balance.js のアクセサ経由で取得する（balance_version と実値を必ず一致させる）。
+//   ここに置く値は「既定 preset と同一の現在値」の単一定義であり、無断変更しない。
+// ===================================
+
+// ====== Phase 11: ウェーブ（時間ではなくウェーブ進行で難易度が上がる層） ======
+// ウェーブ列（1サイクル）。最後はボス戦。Endless はサイクルで繰り返す。
+export const WAVE_SEQUENCE = ['normal', 'homing', 'laser', 'gapwall', 'boss'];
+export const WAVE_DURATION_SEC = 14; // 通常ウェーブの長さ（deltaTime 基準・pause で凍結）
+export const WAVE_INTRO_SEC = 1.8; // ウェーブ開始演出
+export const WAVE_OUTRO_SEC = 1.0; // ウェーブ終了演出
+export const WAVE_INTERMISSION_SEC = 2.4; // ウェーブ間の休憩
+export const BOSS_WARNING_SEC = 2.2; // ボス出現前の警告
+export const BOSS_DEFEAT_SEC = 2.2; // ボス撃破演出
+export const CYCLE_DIFFICULTY_STEP = 0.12; // サイクルごとの難易度上昇係数（速度などへ加算的に乗る）
+export const CYCLE_BOSS_HP_STEP = 0.25; // サイクルごとのボス HP 増加係数
+
+// ウェーブ別の追加出現率（既存 spawn とは別枠で、そのウェーブの主役障害物を増やす）。
+export const WAVE_SPAWN_BOOST = {
+    normal: 0,
+    homing: 0.010,
+    laser: 0.010,
+    gapwall: 0.006
+};
+
+// ====== Phase 11: ボス（3種。サイクルごとに巡回） ======
+export const BOSS_SEQUENCE = ['firewall', 'worm', 'gate'];
+export const BOSS_BAR_MARGIN = 16; // HP バーの画面余白(px)
+
+// ボス1: Firewall Core — 左右から警告レーザー。安全地帯が移動。コア取得でダメージ。
+export const BOSS_FIREWALL_HP = 6; // コア取得 1 回 = 1 ダメージ
+export const BOSS_FIREWALL_LASER_INTERVAL = 2.6; // レーザー発射間隔(秒)
+export const BOSS_FIREWALL_MAX_LASERS = 2; // 同時レーザー上限（安全地帯を必ず残す）
+export const BOSS_FIREWALL_SAFE_WIDTH = 150; // 安全地帯の最小幅(px)（プレイヤー40pxより十分広い）
+export const BOSS_FIREWALL_CORE_INTERVAL = 1.6; // ダメージ用コアの供給間隔(秒)
+
+// ボス2: Data Worm — 上部を左右移動し追尾障害物を生成。ダッシュ接触でダメージ。
+export const BOSS_WORM_HP = 5; // ダッシュ有効接触 1 回 = 1 ダメージ
+export const BOSS_WORM_WIDTH = 120;
+export const BOSS_WORM_HEIGHT = 40;
+export const BOSS_WORM_SPEED = 150; // 左右移動速度(px/秒)
+export const BOSS_WORM_SPAWN_INTERVAL = 2.0; // 追尾障害物の生成間隔(秒)
+export const BOSS_WORM_MAX_MINIONS = 4; // 同時追尾障害物の上限
+export const BOSS_WORM_ATTACK_WARNING = 0.9; // 生成前の警告時間(秒)
+export const BOSS_WORM_HIT_COOLDOWN = 0.8; // 連続ダメージ防止（秒）
+
+// ボス3: Security Gate — 複数の隙間パターンを切替。正しい隙間通過でダメージ。
+export const BOSS_GATE_HP = 5; // 正しい通過 1 回 = 1 ダメージ
+export const BOSS_GATE_WALL_INTERVAL = 3.2; // 隙間壁の供給間隔(秒)
+export const BOSS_GATE_MIN_GAP = 120; // 最小通過幅(px)（物理的に通過可能を保証）
+export const BOSS_GATE_FALL_FACTOR = 0.8; // 隙間壁の落下速度係数
+
+// ====== Phase 11: ランダムイベント（同時に1つのみ） ======
+export const EVENT_IDS = ['core_rush', 'double_score', 'high_speed', 'dark_zone', 'laser_storm'];
+export const EVENT_DURATION_SEC = 9; // イベント効果時間
+export const EVENT_MIN_INTERVAL_SEC = 16; // イベント終了後の最短クールタイム
+export const EVENT_FIRST_DELAY_SEC = 12; // 初回イベントまでの猶予
+export const EVENT_WARNING_SEC = 1.2; // HIGH SPEED など事前警告が要るイベントの警告時間
+export const EVENT_CORE_RUSH_MULT = 3.0; // CORE RUSH のコア出現倍率
+export const EVENT_HIGH_SPEED_MULT = 1.45; // HIGH SPEED の障害物速度倍率
+export const EVENT_DARK_ZONE_RADIUS = 150; // DARK ZONE の視界半径(px)
+export const EVENT_LASER_STORM_RATE = 0.018; // LASER STORM の追加レーザー出現率
+export const EVENT_LASER_STORM_MAX = 3; // LASER STORM の同時レーザー上限（安全地帯を必ず残す）
+
+// ====== Phase 11: Hardcore のウェーブ／ボス補正（回避不能化は禁止） ======
+export const HARDCORE_WAVE_SPEED_FACTOR = 0.8; // ウェーブ進行を速める（時間を短縮）
+export const HARDCORE_BOSS_INTERVAL_FACTOR = 0.75; // ボス攻撃間隔を短縮
+
+// ====== Phase 13: 匿名分析（同意キーのみ。送信先は EDGE_FUNCTIONS_BASE を流用） ======
+// 初期状態は分析 OFF。明示同意でのみ ON（保存キー）。
+export const ANALYTICS_CONSENT_STORAGE_KEY = 'cyberRunnerAnalyticsConsent';
+// 分析を送るモード（Training は対象外）。
+export const ANALYTICS_MODES = ['endless', 'timeattack', 'hardcore'];

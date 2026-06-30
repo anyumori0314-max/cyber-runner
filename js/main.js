@@ -35,6 +35,9 @@ import {
     getCompletedMap as getChallengeCompletedMap
 } from './model/challenges.js';
 import { fetchChallengeInfo } from './services/challenge-service.js';
+import { hasConsent, setConsent, buildPayload, isAnalyticsMode } from './model/analytics.js';
+import { submitAnalytics } from './services/analytics-service.js';
+import { describeBalance } from './model/balance.js';
 
 import { configureHud, updateHud, updateSoundButton } from './view/hud.js';
 import {
@@ -88,6 +91,9 @@ import {
     configureRunCompletion
 } from './controller/game-loop.js';
 import { registerInput, configureInput } from './controller/input.js';
+import { configureTouchInput, registerTouchInput, isTouchDevice, setTouchControlsVisible } from './controller/touch-input.js';
+import { trainingStartWave, trainingStartBoss, trainingStartEvent } from './controller/wave-controller.js';
+import { registerServiceWorker } from './services/pwa-service.js';
 import { configureModeSelectView } from './view/mode-select-view.js';
 
 // ===================================
@@ -129,6 +135,10 @@ const trSpeed = document.getElementById('trSpeed');
 const trObstacles = document.getElementById('trObstacles');
 const trainingPanel = document.getElementById('trainingPanel');
 const trPuButtons = Array.from(document.querySelectorAll('.tr-pu'));
+// Phase 11: Training の Wave / Boss / Event 確認ボタン
+const trWaveButtons = Array.from(document.querySelectorAll('.tr-wave'));
+const trBossButtons = Array.from(document.querySelectorAll('.tr-boss'));
+const trEventButtons = Array.from(document.querySelectorAll('.tr-event'));
 const titleCanvas = document.getElementById('titleCanvas');
 const muteBtn = document.getElementById('muteBtn');
 // Phase 1: タイトル画面 TOP5
@@ -159,7 +169,20 @@ const optSoundVolume = document.getElementById('optSoundVolume');
 const optScreenShake = document.getElementById('optScreenShake');
 const optParticles = document.getElementById('optParticles');
 const optShowControls = document.getElementById('optShowControls');
+const optTouchControls = document.getElementById('optTouchControls'); // Phase 12
+const optAnalyticsConsent = document.getElementById('optAnalyticsConsent'); // Phase 13
 const optionsBackBtn = document.getElementById('optionsBackBtn');
+const balanceInfo = document.getElementById('balanceInfo'); // Phase 13 (Training 表示)
+
+// Phase 12: モバイル操作ボタン / PWA 更新バナー
+const touchControlsContainer = document.getElementById('touchControls');
+const touchLeftBtn = document.getElementById('touchLeft');
+const touchRightBtn = document.getElementById('touchRight');
+const touchDashBtn = document.getElementById('touchDash');
+const touchPauseBtn = document.getElementById('touchPause');
+const updateBanner = document.getElementById('updateBanner');
+const updateApplyBtn = document.getElementById('updateApplyBtn');
+const updateDismissBtn = document.getElementById('updateDismissBtn');
 
 // Phase 2: ポーズオーバーレイのボタン
 const resumeBtn = document.getElementById('resumeBtn');
@@ -285,9 +308,17 @@ configureModeSelectView(
         trSpeed,
         trObstacles,
         trainingPanel,
-        trPuButtons
+        trPuButtons,
+        trWaveButtons,
+        trBossButtons,
+        trEventButtons
     },
-    { onSpawnPreview: spawnTrainingPowerup }
+    {
+        onSpawnPreview: spawnTrainingPowerup,
+        onTrainingWave: trainingStartWave,
+        onTrainingBoss: trainingStartBoss,
+        onTrainingEvent: trainingStartEvent
+    }
 );
 // Phase 8: プロフィール / 外観ビュー
 configureProfileView({
@@ -359,6 +390,28 @@ configureRunCompletion((summary) => {
     for (const c of newlyCos) showToast('COSMETIC UNLOCKED', c.name);
     renderProfile();
     renderCosmetics();
+
+    // Phase 13: 匿名分析（同意 ON + 分析対象モードのときのみ・1プレイ1件）。
+    //   この handler は Training 以外でのみ呼ばれ、Replay は通らない（送信対象外を担保）。
+    //   送信はオフライン/未配備なら service 側で安全にスキップ。失敗してもゲームへ影響しない。
+    if (hasConsent() && isAnalyticsMode(summary.mode)) {
+        const payload = buildPayload({
+            mode: summary.mode,
+            score: summary.score,
+            durationMs: summary.durationMs,
+            reachedLevel: summary.reachedLevel,
+            maxCombo: summary.maxCombo,
+            coreCount: summary.coreCount,
+            nearMissCount: summary.nearMissCount,
+            dashCount: summary.dashCount,
+            deathCause: summary.deathCause,
+            waveReached: summary.waveReached,
+            bossReached: summary.bossReached,
+            bossDefeated: summary.bossDefeated,
+            powerupsCollected: summary.powerupsCollected
+        });
+        submitAnalytics(payload).catch(() => { /* ゲームへ影響させない */ });
+    }
 });
 
 // ===================================
@@ -394,11 +447,17 @@ registerGlobalErrorHandlers();
 // ===================================
 // 6. オプションの効果適用（音量・操作説明表示）。値の保持・永続化は model 側。
 // ===================================
+// Phase 12: 'auto' は端末判定（タッチ端末で ON / PC で OFF）へ解決する。
+function resolveTouchControls(value) {
+    return value === 'auto' ? isTouchDevice() : value === true;
+}
 function applyOptions(o) {
     AudioManager.setMuted(!o.soundEnabled);
     AudioManager.setVolume(o.soundVolume);
     updateSoundButton(AudioManager.muted);
     if (titleControls) titleControls.style.display = o.showControls ? '' : 'none';
+    // Phase 12: 画面の操作ボタン表示（タッチ端末で初期 ON / PC で初期 OFF）。
+    setTouchControlsVisible(resolveTouchControls(o.touchControls));
 }
 
 // タイトルのミッションプレビューを現在の割り当てから更新する。
@@ -416,7 +475,8 @@ configureOptionsView(
         soundVolume: optSoundVolume,
         screenShake: optScreenShake,
         particles: optParticles,
-        showControls: optShowControls
+        showControls: optShowControls,
+        touchControls: optTouchControls
     },
     applyOptions
 );
@@ -426,6 +486,18 @@ configureOptionsView(
 // ===================================
 configureInput({ onPause: togglePause, onDash: doDash });
 registerInput();
+// Phase 12: タッチ操作（Pointer Events）。キーボードと共存・重複登録防止。
+configureTouchInput(
+    {
+        left: touchLeftBtn,
+        right: touchRightBtn,
+        dash: touchDashBtn,
+        pause: touchPauseBtn,
+        container: touchControlsContainer
+    },
+    { onDash: doDash, onPause: togglePause }
+);
+registerTouchInput();
 
 // ===================================
 // 8. イベント配線（ボタン・入力欄・ミュート・オーバーレイ）
@@ -475,6 +547,13 @@ if (lbModeFilter) {
 if (titleOptionsBtn) titleOptionsBtn.addEventListener('click', () => { renderOptions(); showOptionsScreen(); });
 if (pauseOptionsBtn) pauseOptionsBtn.addEventListener('click', () => { renderOptions(); showOptionsScreen(); });
 if (optionsBackBtn) optionsBackBtn.addEventListener('click', hideOptionsScreen);
+// Phase 13: 匿名分析の同意（明示同意でのみ ON・いつでも撤回可能）。
+if (optAnalyticsConsent) {
+    optAnalyticsConsent.addEventListener('change', () => {
+        setConsent(optAnalyticsConsent.checked);
+        optAnalyticsConsent.checked = hasConsent();
+    });
+}
 
 // Phase 5: 実績一覧を開く・閉じる
 if (achievementsBtn) achievementsBtn.addEventListener('click', () => { renderAchievements(); showAchievementsScreen(); });
@@ -532,6 +611,10 @@ function init() {
     renderCosmetics(); // 外観一覧初期描画
     refreshAndRenderChallenges(); // チャレンジを取得して初期描画（async・フォールバックで継続）
 
+    // Phase 13: 分析同意トグルの初期表示（既定 OFF）と Training 用バランス表示。
+    if (optAnalyticsConsent) optAnalyticsConsent.checked = hasConsent();
+    if (balanceInfo) balanceInfo.textContent = describeBalance();
+
     // 今回プレイのミッションを割り当て、タイトルにプレビュー表示
     prepareMission();
     updateTitleMission();
@@ -549,3 +632,16 @@ function init() {
 init();
 startTitleAnimation();
 updateSoundButton(AudioManager.muted);
+
+// ===================================
+// 10. PWA: Service Worker 登録と更新通知（Phase 12）
+//   失敗してもゲームは通常版で継続。更新はユーザー操作で適用（プレイ中は自動リロードしない）。
+// ===================================
+let applyPendingUpdate = null;
+function showUpdateBanner(apply) {
+    applyPendingUpdate = apply;
+    if (updateBanner) updateBanner.hidden = false;
+}
+if (updateApplyBtn) updateApplyBtn.addEventListener('click', () => { if (applyPendingUpdate) applyPendingUpdate(); });
+if (updateDismissBtn) updateDismissBtn.addEventListener('click', () => { if (updateBanner) updateBanner.hidden = true; });
+registerServiceWorker({ onUpdateAvailable: showUpdateBanner });

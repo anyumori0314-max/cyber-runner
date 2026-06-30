@@ -25,6 +25,10 @@ function sanitize(raw) {
         if (typeof raw.screenShakeEnabled === 'boolean') o.screenShakeEnabled = raw.screenShakeEnabled;
         if (typeof raw.particlesEnabled === 'boolean') o.particlesEnabled = raw.particlesEnabled;
         if (typeof raw.showControls === 'boolean') o.showControls = raw.showControls;
+        // Phase 12: touchControls は 'auto' | true | false の三状態（既定 'auto'）。
+        if (raw.touchControls === true || raw.touchControls === false || raw.touchControls === 'auto') {
+            o.touchControls = raw.touchControls;
+        }
     }
     return o;
 }

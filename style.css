@@ -206,6 +206,8 @@ body {
     box-shadow: 0 0 20px #00ff88, inset 0 0 30px rgba(0, 255, 136, 0.1);
     display: block;
     margin: 0 auto;
+    /* Phase 12: キャンバス上のスクロール/ピンチ等のジェスチャを抑止（誤スクロール防止） */
+    touch-action: none;
 }
 
 /* パワーアップ表示 */
@@ -472,6 +474,17 @@ body {
 }
 .option-row input[type="range"] { width: 160px; }
 .option-row input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
+/* 三状態の操作ボタン設定（AUTO/ON/OFF）。タップしやすい高さを確保しキーボード操作可能。 */
+.option-select {
+    min-height: 36px;
+    padding: 4px 10px;
+    color: #cfefff;
+    background: rgba(0, 20, 32, 0.85);
+    border: 1px solid #2f6f7a;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    cursor: pointer;
+}
 
 /* 実績一覧 */
 .achievements-content { width: min(460px, 92vw); }
@@ -658,22 +671,32 @@ body {
 }
 .training-panel {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    gap: 4px;
+    align-items: stretch;
     margin-top: 8px;
     padding: 8px;
     border: 1px dashed rgba(0, 255, 136, 0.4);
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.35);
 }
+.training-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-start;
+}
 .training-panel-label {
     color: #00ff88;
     font-size: 0.78rem;
     letter-spacing: 1px;
+    min-width: 48px;
 }
-.tr-pu {
+.tr-pu,
+.tr-wave,
+.tr-boss,
+.tr-event {
     padding: 3px 7px;
     font-size: 0.72rem;
 }
@@ -856,4 +879,173 @@ body {
     gap: 6px;
     justify-content: center;
     margin-bottom: 10px;
+}
+
+/* ===================================
+   Phase 12: モバイル操作 / PWA / アクセシビリティ
+   =================================== */
+
+/* セーフエリア（ノッチ等）対応。横スクロールは発生させない。 */
+body {
+    overflow-x: hidden;
+}
+.container {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    box-sizing: border-box;
+}
+
+/* オンスクリーン操作ボタン群（ゲーム画面の下部に重ねる） */
+.touch-controls {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 14px calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+    pointer-events: none; /* 中央の隙間はクリックを透過 */
+    z-index: 30;
+}
+.touch-left-group,
+.touch-right-group {
+    display: flex;
+    gap: 12px;
+    pointer-events: auto;
+}
+.touch-btn {
+    /* タッチ領域は最低 44x44 CSS px を保証 */
+    min-width: 64px;
+    min-height: 64px;
+    padding: 0 14px;
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: #001b14;
+    background: rgba(0, 255, 136, 0.78);
+    border: 2px solid #00ffcc;
+    border-radius: 14px;
+    box-shadow: 0 0 14px rgba(0, 255, 136, 0.4);
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+    cursor: pointer;
+    opacity: 0.92;
+}
+.touch-btn.touch-dash {
+    background: rgba(0, 234, 255, 0.78);
+    border-color: #00eaff;
+}
+.touch-btn.touch-pause {
+    background: rgba(255, 255, 255, 0.22);
+    color: #e8f6ff;
+    border-color: #9fd8ff;
+    min-width: 56px;
+}
+/* 押下状態の視覚表示（色だけでなく形＝枠とスケールでも示す） */
+.touch-btn.pressed {
+    transform: scale(0.92);
+    filter: brightness(1.3);
+    outline: 3px solid #ffffff;
+    outline-offset: -2px;
+}
+
+/* Phase 13: 分析同意の説明 / Training のバランス表示 */
+.option-note {
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: #9fb3c8;
+    margin: 4px 2px 10px;
+    max-width: 380px;
+}
+.balance-info {
+    font-size: 0.72rem;
+    color: #7afcd8;
+    margin: 8px 0 0;
+    letter-spacing: 0.5px;
+}
+
+/* PWA 更新バナー */
+.update-banner {
+    position: fixed;
+    left: 50%;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(10, 14, 39, 0.96);
+    border: 1px solid #00ffcc;
+    border-radius: 10px;
+    box-shadow: 0 0 18px rgba(0, 255, 204, 0.4);
+    color: #e8f6ff;
+    z-index: 50;
+}
+.update-banner[hidden] {
+    display: none;
+}
+
+/* フォーカス可視化（キーボード操作） */
+.btn:focus-visible,
+.touch-btn:focus-visible,
+.mode-btn:focus-visible,
+input:focus-visible,
+select:focus-visible {
+    outline: 3px solid #00eaff;
+    outline-offset: 2px;
+}
+
+/* 画面拡大時もボタンが消えないよう、ボタンは折り返す */
+.title-buttons,
+.result-actions,
+.training-row {
+    flex-wrap: wrap;
+}
+
+/* モーション軽減の希望を尊重（演出のトランジションを抑制） */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* 高コントラストの希望を尊重（枠を強調） */
+@media (prefers-contrast: more) {
+    .touch-btn,
+    .btn,
+    #gameCanvas {
+        border-width: 3px;
+    }
+    .touch-btn {
+        opacity: 1;
+    }
+}
+
+/* 横画面（ランドスケープ・低い高さ）でタッチUIが Canvas 下部を覆わないようにする。
+   左右移動ボタンは画面左の縦並び、ダッシュ/一時停止は画面右の縦並びにして、
+   クラスタを上下中央へ寄せる（中央・下端のプレイ領域を空ける）。最低 44x44 CSS px は維持。 */
+@media (orientation: landscape) and (max-height: 480px) {
+    .touch-controls {
+        top: 0;
+        align-items: center; /* 縦中央：下端のゲーム領域を覆わない */
+        padding: calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+    }
+    .touch-left-group,
+    .touch-right-group {
+        flex-direction: column; /* 横幅の専有を抑え、中央を広く空ける */
+        gap: 10px;
+    }
+    .touch-btn {
+        min-width: 48px;
+        min-height: 44px; /* 44x44 CSS px を下回らない */
+        padding: 0 10px;
+        font-size: 1.05rem;
+        opacity: 0.82;
+    }
+    .touch-btn.touch-pause {
+        min-width: 48px;
+    }
 }
